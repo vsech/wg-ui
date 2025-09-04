@@ -136,4 +136,4 @@ static/logs/*.json
 logs/*.json
 log/
 
-.db
+*.db
