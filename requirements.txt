@@ -1,0 +1,17 @@
+# WireGuard VPN Installer Dependencies
+# Все зависимости являются стандартными модулями Python 3.6+
+# FastAPI WireGuard Client Manager Dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy>=2.0.25
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+qrcode[pil]==7.4.2
+python-dotenv==1.0.0
+
+# System dependencies (install separately):
+# - wireguard-tools
+# - qrencode
+# - systemd (for systemctl commands)
+# - iptables or firewalld (for firewall)
