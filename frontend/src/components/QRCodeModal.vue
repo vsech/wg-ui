@@ -18,28 +18,23 @@
 
       <div v-else-if="qrCode" class="uk-text-center">
         <div class="uk-margin">
-          <img :src="qrCode" alt="WireGuard QR Code" class="uk-border-rounded qr-code-image">
+          <img :src="qrCode" alt="WireGuard QR Code" class="uk-border-rounded qr-code-image" />
         </div>
-        
+
         <div class="uk-margin">
           <p class="uk-text-lead">Scan with WireGuard App</p>
           <p class="uk-text-small uk-text-muted">
-            Open the WireGuard app on your device and tap the "+" button, then select "Create from QR code"
+            Open the WireGuard app on your device and tap the "+" button, then select "Create from
+            QR code"
           </p>
         </div>
 
         <div class="uk-margin uk-text-center">
-          <button 
-            class="uk-button uk-button-primary uk-margin-small-right"
-            @click="downloadQR"
-          >
+          <button class="uk-button uk-button-primary uk-margin-small-right" @click="downloadQR">
             <span uk-icon="download"></span>
             Download QR Code
           </button>
-          <button 
-            class="uk-button uk-button-default"
-            @click="copyToClipboard"
-          >
+          <button class="uk-button uk-button-default" @click="copyToClipboard">
             <span uk-icon="copy"></span>
             Copy Config
           </button>
@@ -63,91 +58,91 @@
 </template>
 
 <script>
-import { ref, watch } from 'vue'
-import { useClientsStore } from '@/stores/clients'
-import UIkit from 'uikit'
+import { ref, watch } from "vue";
+import { useClientsStore } from "@/stores/clients";
+import UIkit from "uikit";
 
 export default {
-  name: 'QRCodeModal',
+  name: "QRCodeModal",
   props: {
     modelValue: {
       type: Boolean,
-      default: false
+      default: false,
     },
     clientName: {
       type: String,
-      default: ''
+      default: "",
     },
     qrCode: {
       type: String,
-      default: ''
-    }
+      default: "",
+    },
   },
-  emits: ['update:modelValue'],
+  emits: ["update:modelValue"],
   setup(props, { emit }) {
-    const clientsStore = useClientsStore()
-    const loading = ref(false)
-    const error = ref('')
-    const configText = ref('')
+    const clientsStore = useClientsStore();
+    const loading = ref(false);
+    const error = ref("");
+    const configText = ref("");
 
     const closeModal = () => {
-      emit('update:modelValue', false)
-    }
+      emit("update:modelValue", false);
+    };
 
     const downloadQR = () => {
-      if (!props.qrCode) return
+      if (!props.qrCode) return;
 
       // Convert base64 to blob
-      const base64Data = props.qrCode.replace(/^data:image\/png;base64,/, '')
-      const byteCharacters = atob(base64Data)
-      const byteNumbers = new Array(byteCharacters.length)
-      
+      const base64Data = props.qrCode.replace(/^data:image\/png;base64,/, "");
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+
       for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i)
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
-      
-      const byteArray = new Uint8Array(byteNumbers)
-      const blob = new Blob([byteArray], { type: 'image/png' })
-      
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${props.clientName}-qr.png`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      
-      UIkit.notification('QR code downloaded successfully', 'success')
-    }
+
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "image/png" });
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${props.clientName}-qr.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      UIkit.notification("QR code downloaded successfully", "success");
+    };
 
     const copyToClipboard = async () => {
       try {
         // Get the config text from the store
-        const client = clientsStore.clients.find(c => c.name === props.clientName)
+        const client = clientsStore.clients.find((c) => c.name === props.clientName);
         if (client && client.config) {
-          await navigator.clipboard.writeText(client.config)
-          UIkit.notification('Configuration copied to clipboard', 'success')
+          await navigator.clipboard.writeText(client.config);
+          UIkit.notification("Configuration copied to clipboard", "success");
         } else {
           // Fallback: fetch config if not available
-          const response = await clientsStore.getClientConfig(props.clientName)
-          await navigator.clipboard.writeText(response.config)
-          UIkit.notification('Configuration copied to clipboard', 'success')
+          const response = await clientsStore.getClientConfig(props.clientName);
+          await navigator.clipboard.writeText(response.config);
+          UIkit.notification("Configuration copied to clipboard", "success");
         }
       } catch (err) {
-        UIkit.notification('Failed to copy to clipboard', 'danger')
+        UIkit.notification("Failed to copy to clipboard", "danger");
       }
-    }
+    };
 
     return {
       loading,
       error,
       closeModal,
       downloadQR,
-      copyToClipboard
-    }
-  }
-}
+      copyToClipboard,
+    };
+  },
+};
 </script>
 
 <style scoped>

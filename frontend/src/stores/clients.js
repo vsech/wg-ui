@@ -10,7 +10,7 @@ export const useClientsStore = defineStore('clients', () => {
   const fetchClients = async () => {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await apiService.getClients()
       clients.value = response
@@ -24,7 +24,7 @@ export const useClientsStore = defineStore('clients', () => {
   const createClient = async (clientData) => {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await apiService.createClient(clientData)
       await fetchClients() // Refresh the list
@@ -40,7 +40,7 @@ export const useClientsStore = defineStore('clients', () => {
   const deleteClient = async (clientName) => {
     loading.value = true
     error.value = null
-    
+
     try {
       await apiService.deleteClient(clientName)
       await fetchClients() // Refresh the list
@@ -56,7 +56,7 @@ export const useClientsStore = defineStore('clients', () => {
   const getClientQR = async (clientName) => {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await apiService.getClientQR(clientName)
       return response.qr_code

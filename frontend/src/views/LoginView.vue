@@ -1,5 +1,8 @@
 <template>
-  <div class="uk-section uk-section-muted uk-flex uk-flex-center uk-flex-middle" style="min-height: 100vh;">
+  <div
+    class="uk-section uk-section-muted uk-flex uk-flex-center uk-flex-middle"
+    style="min-height: 100vh"
+  >
     <div class="uk-width-1-3@m uk-width-1-2@s">
       <div class="uk-card uk-card-default uk-card-body">
         <h3 class="uk-card-title uk-text-center">
@@ -11,28 +14,28 @@
           <div class="uk-margin">
             <label class="uk-form-label" for="username">Username</label>
             <div class="uk-form-controls">
-              <input 
-                class="uk-input" 
-                id="username" 
-                type="text" 
+              <input
+                class="uk-input"
+                id="username"
+                type="text"
                 v-model="form.username"
                 placeholder="Enter your username"
                 required
-              >
+              />
             </div>
           </div>
 
           <div class="uk-margin">
             <label class="uk-form-label" for="password">Password</label>
             <div class="uk-form-controls">
-              <input 
-                class="uk-input" 
-                id="password" 
-                type="password" 
+              <input
+                class="uk-input"
+                id="password"
+                type="password"
                 v-model="form.password"
                 placeholder="Enter your password"
                 required
-              >
+              />
             </div>
           </div>
 
@@ -42,8 +45,8 @@
           </div>
 
           <div class="uk-margin">
-            <button 
-              class="uk-button uk-button-primary uk-width-1-1" 
+            <button
+              class="uk-button uk-button-primary uk-width-1-1"
               type="submit"
               :disabled="authStore.loading"
             >
@@ -55,7 +58,7 @@
 
         <div class="uk-text-center uk-margin-top">
           <p class="uk-text-muted">
-            Don't have an account? 
+            Don't have an account?
             <a @click="showRegister = !showRegister" class="uk-link">Register here</a>
           </p>
         </div>
@@ -67,34 +70,34 @@
             <div class="uk-margin">
               <label class="uk-form-label" for="reg-username">Username</label>
               <div class="uk-form-controls">
-                <input 
-                  class="uk-input" 
-                  id="reg-username" 
-                  type="text" 
+                <input
+                  class="uk-input"
+                  id="reg-username"
+                  type="text"
                   v-model="registerForm.username"
                   placeholder="Choose a username"
                   required
-                >
+                />
               </div>
             </div>
 
             <div class="uk-margin">
               <label class="uk-form-label" for="reg-password">Password</label>
               <div class="uk-form-controls">
-                <input 
-                  class="uk-input" 
-                  id="reg-password" 
-                  type="password" 
+                <input
+                  class="uk-input"
+                  id="reg-password"
+                  type="password"
                   v-model="registerForm.password"
                   placeholder="Choose a password"
                   required
-                >
+                />
               </div>
             </div>
 
             <div class="uk-margin">
-              <button 
-                class="uk-button uk-button-secondary uk-width-1-1" 
+              <button
+                class="uk-button uk-button-secondary uk-width-1-1"
                 type="submit"
                 :disabled="authStore.loading"
               >
@@ -110,44 +113,44 @@
 </template>
 
 <script>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import UIkit from 'uikit'
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { useAuthStore } from "@/stores/auth";
+import UIkit from "uikit";
 
 export default {
-  name: 'LoginView',
+  name: "LoginView",
   setup() {
-    const router = useRouter()
-    const authStore = useAuthStore()
-    
+    const router = useRouter();
+    const authStore = useAuthStore();
+
     const form = ref({
-      username: '',
-      password: ''
-    })
+      username: "",
+      password: "",
+    });
 
     const registerForm = ref({
-      username: '',
-      password: ''
-    })
+      username: "",
+      password: "",
+    });
 
-    const showRegister = ref(false)
+    const showRegister = ref(false);
 
     const handleLogin = async () => {
-      const success = await authStore.login(form.value)
+      const success = await authStore.login(form.value);
       if (success) {
-        router.push('/clients')
+        router.push("/clients");
       }
-    }
+    };
 
     const handleRegister = async () => {
-      const success = await authStore.register(registerForm.value)
+      const success = await authStore.register(registerForm.value);
       if (success) {
-        UIkit.notification('Account created successfully! Please login.', 'success')
-        showRegister.value = false
-        registerForm.value = { username: '', password: '' }
+        UIkit.notification("Account created successfully! Please login.", "success");
+        showRegister.value = false;
+        registerForm.value = { username: "", password: "" };
       }
-    }
+    };
 
     return {
       form,
@@ -155,8 +158,8 @@ export default {
       showRegister,
       authStore,
       handleLogin,
-      handleRegister
-    }
-  }
-}
+      handleRegister,
+    };
+  },
+};
 </script>

@@ -13,15 +13,15 @@ export const useAuthStore = defineStore('auth', () => {
   const login = async (credentials) => {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await apiService.login(credentials)
       token.value = response.access_token
       localStorage.setItem('token', response.access_token)
-      
+
       // Set token for future API calls
       apiService.setToken(response.access_token)
-      
+
       return true
     } catch (err) {
       error.value = err.response?.data?.detail || 'Login failed'
@@ -41,7 +41,7 @@ export const useAuthStore = defineStore('auth', () => {
   const register = async (userData) => {
     loading.value = true
     error.value = null
-    
+
     try {
       await apiService.register(userData)
       return true

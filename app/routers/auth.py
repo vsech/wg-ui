@@ -19,7 +19,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
-    
+
     AuthService.create_user(db, user_data)
     return MessageResponse(message="User created successfully")
 
@@ -27,12 +27,13 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 async def login(user_data: UserLogin, db: Session = Depends(get_db)):
     """Authenticate user and return JWT token"""
-    user = AuthService.authenticate_user(db, user_data.username, user_data.password)
+    user = AuthService.authenticate_user(
+        db, user_data.username, user_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return AuthService.create_access_token_for_user(user.username)

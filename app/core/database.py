@@ -10,7 +10,7 @@ from .config import settings
 
 # Database engine
 engine = create_engine(
-    settings.DATABASE_URL, 
+    settings.DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
 

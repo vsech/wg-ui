@@ -10,7 +10,7 @@ from app.core.database import Base
 class User(Base):
     """User model for authentication"""
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -21,7 +21,7 @@ class User(Base):
 class Client(Base):
     """Client model for WireGuard clients"""
     __tablename__ = "clients"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     public_key = Column(String, nullable=False)

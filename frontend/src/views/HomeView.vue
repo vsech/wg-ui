@@ -7,7 +7,7 @@
           WireGuard Client Manager
         </h1>
         <p class="uk-text-lead">Manage your WireGuard VPN clients with ease</p>
-        
+
         <div class="uk-margin-large-top">
           <router-link to="/clients" class="uk-button uk-button-primary uk-button-large">
             <span uk-icon="users"></span>
@@ -45,6 +45,6 @@
 
 <script>
 export default {
-  name: 'HomeView'
-}
+  name: "HomeView",
+};
 </script>

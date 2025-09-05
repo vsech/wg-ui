@@ -30,40 +30,43 @@
     </div>
 
     <!-- Loading overlay -->
-    <div v-if="loading" class="uk-overlay-default uk-position-cover uk-flex uk-flex-center uk-flex-middle">
+    <div
+      v-if="loading"
+      class="uk-overlay-default uk-position-cover uk-flex uk-flex-center uk-flex-middle"
+    >
       <div uk-spinner="ratio: 2"></div>
     </div>
   </div>
 </template>
 
 <script>
-import { useAuthStore } from '@/stores/auth'
-import { computed } from 'vue'
+import { useAuthStore } from "@/stores/auth";
+import { computed } from "vue";
 
 export default {
-  name: 'App',
+  name: "App",
   setup() {
-    const authStore = useAuthStore()
-    
-    const loading = computed(() => authStore.loading)
+    const authStore = useAuthStore();
+
+    const loading = computed(() => authStore.loading);
 
     const logout = async () => {
-      await authStore.logout()
-    }
+      await authStore.logout();
+    };
 
     return {
       authStore,
       loading,
-      logout
-    }
-  }
-}
+      logout,
+    };
+  },
+};
 </script>
 
 <style>
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 #app {

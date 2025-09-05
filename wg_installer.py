@@ -16,37 +16,7 @@ import tarfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 import argparse
-
-
-class Colors:
-    """ANSI color codes for terminal output"""
-    RED = '\033[91m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    BOLD = '\033[1m'
-    END = '\033[0m'
-
-
-class SystemConfig:
-    """System configuration container"""
-
-    def __init__(self):
-        self.os_name = ""
-        self.os_version = ""
-        self.use_boringtun = False
-
-
-class ServerConfig:
-    """Server configuration container"""
-
-    def __init__(self):
-        self.server_ip = None
-        self.server_ipv6 = None
-        self.public_ip = None
-        self.port = None
-
+from wg_const import Colors, SystemConfig, ServerConfig
 
 class WireGuardBase:
     """Base class with common functionality for WireGuard operations"""
@@ -591,9 +561,10 @@ WantedBy=multi-user.target
             # Read the configuration file content
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_content = f.read()
-            
+
             # Generate QR code from file content, not file path
-            self.run_command(["qrencode", "-t", "ANSI256UTF8"], input_text=config_content)
+            self.run_command(["qrencode", "-t", "ANSI256UTF8"],
+                             input_text=config_content)
             print("\n↑ That is a QR code containing the client configuration.")
         except Exception as e:
             self.print_warning(f"Could not generate QR code: {e}")
@@ -911,7 +882,7 @@ class WireGuardClientManager(WireGuardBase):
         self.server = ServerConfig()
 
     def create_client_config(self, client_name: str, dns: str,
-                            ipv6: Optional[str] = None) -> tuple[str, dict]:
+                             ipv6: Optional[str] = None) -> tuple[str, dict]:
         """Create client configuration file"""
         # Find next available IP
         octet = 2
@@ -1100,7 +1071,7 @@ AllowedIPs = 10.7.0.{client_info['octet']}/32"""
 
             # Write peer config to temporary file and use wg addconf
             with tempfile.NamedTemporaryFile(mode='w', suffix='.conf',
-                                           delete=False) as temp_file:
+                                             delete=False) as temp_file:
                 temp_file.write(peer_config)
                 temp_file.flush()
                 self.run_command(["wg", "addconf", "wg0", temp_file.name])

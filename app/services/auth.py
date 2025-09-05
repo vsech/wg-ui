@@ -13,7 +13,7 @@ from app.models.schemas import UserCreate, Token
 
 class AuthService:
     """Authentication service class"""
-    
+
     @staticmethod
     def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
         """Authenticate user with username and password"""
@@ -21,7 +21,7 @@ class AuthService:
         if not user or not verify_password(password, user.hashed_password):
             return None
         return user
-    
+
     @staticmethod
     def create_user(db: Session, user_data: UserCreate) -> User:
         """Create new user"""
@@ -34,18 +34,19 @@ class AuthService:
         db.commit()
         db.refresh(db_user)
         return db_user
-    
+
     @staticmethod
     def get_user_by_username(db: Session, username: str) -> Optional[User]:
         """Get user by username"""
         return db.query(User).filter(User.username == username).first()
-    
+
     @staticmethod
     def create_access_token_for_user(username: str) -> Token:
         """Create access token for user"""
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token_expires = timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": username}, 
+            data={"sub": username},
             expires_delta=access_token_expires
         )
         return Token(access_token=access_token, token_type="bearer")
