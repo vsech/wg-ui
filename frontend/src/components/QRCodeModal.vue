@@ -16,9 +16,9 @@
         <p>{{ error }}</p>
       </div>
 
-      <div v-else-if="qrCode" class="uk-text-center">
+      <div v-else-if="displayedQR" class="uk-text-center">
         <div class="uk-margin">
-          <img :src="qrCode" alt="WireGuard QR Code" class="uk-border-rounded qr-code-image" />
+          <img :src="displayedQR" alt="WireGuard QR Code" class="uk-border-rounded qr-code-image" />
         </div>
 
         <div class="uk-margin">
@@ -27,6 +27,20 @@
             Open the WireGuard app on your device and tap the "+" button, then select "Create from
             QR code"
           </p>
+        </div>
+
+        <!-- Stats -->
+        <div class="uk-margin uk-text-center uk-text-small">
+          <div>
+            <span class="uk-text-muted">Last handshake:</span>
+            <span>{{ formatDateTime(stats.last_handshake) }}</span>
+          </div>
+          <div class="uk-margin-small-top">
+            <span class="uk-text-muted">Traffic:</span>
+            <span>
+              ↓ {{ formatBytes(stats.bytes_received) }} · ↑ {{ formatBytes(stats.bytes_sent) }}
+            </span>
+          </div>
         </div>
 
         <div class="uk-margin uk-text-center">
@@ -84,16 +98,18 @@ export default {
     const loading = ref(false);
     const error = ref("");
     const configText = ref("");
+    const displayedQR = ref("");
+    const stats = ref({ last_handshake: null, bytes_received: 0, bytes_sent: 0 });
 
     const closeModal = () => {
       emit("update:modelValue", false);
     };
 
     const downloadQR = () => {
-      if (!props.qrCode) return;
+      if (!displayedQR.value) return;
 
       // Convert base64 to blob
-      const base64Data = props.qrCode.replace(/^data:image\/png;base64,/, "");
+      const base64Data = displayedQR.value.replace(/^data:image\/png;base64,/, "");
       const byteCharacters = atob(base64Data);
       const byteNumbers = new Array(byteCharacters.length);
 
@@ -147,12 +163,63 @@ export default {
       }
     };
 
+    // Helpers
+    const formatDateTime = (dateTimeString) => {
+      if (!dateTimeString) return "Never";
+      try {
+        const dt = new Date(dateTimeString);
+        if (isNaN(dt.getTime())) return "Never";
+        return dt.toLocaleString();
+      } catch {
+        return "Never";
+      }
+    };
+
+    const formatBytes = (bytes) => {
+      if (!bytes || bytes <= 0) return "0 B";
+      const units = ["B", "KB", "MB", "GB", "TB"]; 
+      let i = 0;
+      let val = bytes;
+      while (val >= 1024 && i < units.length - 1) {
+        val /= 1024;
+        i++;
+      }
+      return `${val.toFixed(val < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+    };
+
+    // Load stats and config when modal opens
+    watch(() => props.modelValue, async (open) => {
+      if (!open) return;
+      try {
+        loading.value = true;
+        // Prefer passed QR initially
+        displayedQR.value = props.qrCode || "";
+        const full = await clientsStore.getClientConfig(props.clientName);
+        // Update stats and prefer server QR if provided
+        stats.value.last_handshake = full.last_handshake;
+        stats.value.bytes_received = full.bytes_received;
+        stats.value.bytes_sent = full.bytes_sent;
+        if (full.qr_code) {
+          displayedQR.value = full.qr_code;
+        }
+      } catch (e) {
+        // non-fatal, just notify
+        UIkit.notification("Failed to load client details", "warning");
+      } finally {
+        loading.value = false;
+      }
+    }, { immediate: true });
+
     return {
       loading,
       error,
       closeModal,
       downloadQR,
       downloadConfig,
+      displayedQR,
+      stats,
+      formatDateTime,
+      formatBytes,
     };
   },
 };

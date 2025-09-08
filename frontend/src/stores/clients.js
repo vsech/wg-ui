@@ -68,6 +68,21 @@ export const useClientsStore = defineStore('clients', () => {
     }
   }
 
+  const getClientConfig = async (clientName) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await apiService.getClientConfig(clientName)
+      return response
+    } catch (err) {
+      error.value = err.response?.data?.detail || 'Failed to load client config'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     clients,
     loading,
@@ -75,6 +90,7 @@ export const useClientsStore = defineStore('clients', () => {
     fetchClients,
     createClient,
     deleteClient,
-    getClientQR
+    getClientQR,
+    getClientConfig
   }
 })

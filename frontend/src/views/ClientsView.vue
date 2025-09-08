@@ -65,6 +65,19 @@
               <p class="uk-text-small uk-text-muted">
                 Created: {{ formatDate(client.created_at) }}
               </p>
+              <div class="uk-margin-small-top uk-text-small">
+                <div>
+                  <span class="uk-text-muted">Last handshake:</span>
+                  <span>{{ formatDateTime(client.last_handshake) }}</span>
+                </div>
+                <div class="uk-margin-small-top">
+                  <span class="uk-text-muted">Traffic:</span>
+                  <span>
+                    ↓ {{ formatBytes(client.bytes_received) }}
+                    · ↑ {{ formatBytes(client.bytes_sent) }}
+                  </span>
+                </div>
+              </div>
             </div>
             <div class="uk-card-footer">
               <div class="uk-button-group uk-width-1-1">
@@ -158,6 +171,29 @@ export default {
       return new Date(dateString).toLocaleDateString();
     };
 
+    const formatDateTime = (dateTimeString) => {
+      if (!dateTimeString) return "Never";
+      try {
+        const dt = new Date(dateTimeString);
+        if (isNaN(dt.getTime())) return "Never";
+        return dt.toLocaleString();
+      } catch {
+        return "Never";
+      }
+    };
+
+    const formatBytes = (bytes) => {
+      if (!bytes || bytes <= 0) return "0 B";
+      const units = ["B", "KB", "MB", "GB", "TB"]; 
+      let i = 0;
+      let val = bytes;
+      while (val >= 1024 && i < units.length - 1) {
+        val /= 1024;
+        i++;
+      }
+      return `${val.toFixed(val < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+    };
+
     const showQRCode = async (clientName) => {
       try {
         selectedClient.value = clientName;
@@ -203,6 +239,8 @@ export default {
       clientToDelete,
       qrCodeData,
       formatDate,
+      formatDateTime,
+      formatBytes,
       showQRCode,
       confirmDelete,
       deleteClient,
