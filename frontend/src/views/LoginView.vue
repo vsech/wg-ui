@@ -56,57 +56,6 @@
           </div>
         </form>
 
-        <div class="uk-text-center uk-margin-top">
-          <p class="uk-text-muted">
-            Don't have an account?
-            <a @click="showRegister = !showRegister" class="uk-link">Register here</a>
-          </p>
-        </div>
-
-        <!-- Registration Form -->
-        <div v-if="showRegister" class="uk-margin-top uk-padding-small uk-background-muted">
-          <h4>Create Account</h4>
-          <form @submit.prevent="handleRegister" class="uk-form-stacked">
-            <div class="uk-margin">
-              <label class="uk-form-label" for="reg-username">Username</label>
-              <div class="uk-form-controls">
-                <input
-                  class="uk-input"
-                  id="reg-username"
-                  type="text"
-                  v-model="registerForm.username"
-                  placeholder="Choose a username"
-                  required
-                />
-              </div>
-            </div>
-
-            <div class="uk-margin">
-              <label class="uk-form-label" for="reg-password">Password</label>
-              <div class="uk-form-controls">
-                <input
-                  class="uk-input"
-                  id="reg-password"
-                  type="password"
-                  v-model="registerForm.password"
-                  placeholder="Choose a password"
-                  required
-                />
-              </div>
-            </div>
-
-            <div class="uk-margin">
-              <button
-                class="uk-button uk-button-secondary uk-width-1-1"
-                type="submit"
-                :disabled="authStore.loading"
-              >
-                <span v-if="authStore.loading" uk-spinner="ratio: 0.8"></span>
-                <span v-else>Register</span>
-              </button>
-            </div>
-          </form>
-        </div>
       </div>
     </div>
   </div>
@@ -116,7 +65,6 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import UIkit from "uikit";
 
 export default {
   name: "LoginView",
@@ -129,12 +77,6 @@ export default {
       password: "",
     });
 
-    const registerForm = ref({
-      username: "",
-      password: "",
-    });
-
-    const showRegister = ref(false);
 
     const handleLogin = async () => {
       const success = await authStore.login(form.value);
@@ -143,22 +85,11 @@ export default {
       }
     };
 
-    const handleRegister = async () => {
-      const success = await authStore.register(registerForm.value);
-      if (success) {
-        UIkit.notification("Account created successfully! Please login.", "success");
-        showRegister.value = false;
-        registerForm.value = { username: "", password: "" };
-      }
-    };
 
     return {
       form,
-      registerForm,
-      showRegister,
       authStore,
       handleLogin,
-      handleRegister,
     };
   },
 };

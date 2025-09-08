@@ -34,9 +34,9 @@
             <span uk-icon="download"></span>
             Download QR Code
           </button>
-          <button class="uk-button uk-button-default" @click="copyToClipboard">
-            <span uk-icon="copy"></span>
-            Copy Config
+          <button class="uk-button uk-button-default" @click="downloadConfig">
+            <span uk-icon="download"></span>
+            Download Config
           </button>
         </div>
 
@@ -116,21 +116,34 @@ export default {
       UIkit.notification("QR code downloaded successfully", "success");
     };
 
-    const copyToClipboard = async () => {
+    const downloadConfig = async () => {
       try {
+        let configContent = "";
+        
         // Get the config text from the store
         const client = clientsStore.clients.find((c) => c.name === props.clientName);
         if (client && client.config) {
-          await navigator.clipboard.writeText(client.config);
-          UIkit.notification("Configuration copied to clipboard", "success");
+          configContent = client.config;
         } else {
           // Fallback: fetch config if not available
           const response = await clientsStore.getClientConfig(props.clientName);
-          await navigator.clipboard.writeText(response.config);
-          UIkit.notification("Configuration copied to clipboard", "success");
+          configContent = response.config;
         }
+
+        // Create blob and download
+        const blob = new Blob([configContent], { type: "text/plain" });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${props.clientName}.conf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+
+        UIkit.notification("Configuration downloaded successfully", "success");
       } catch (err) {
-        UIkit.notification("Failed to copy to clipboard", "danger");
+        UIkit.notification("Failed to download configuration", "danger");
       }
     };
 
@@ -139,7 +152,7 @@ export default {
       error,
       closeModal,
       downloadQR,
-      copyToClipboard,
+      downloadConfig,
     };
   },
 };

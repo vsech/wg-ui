@@ -50,9 +50,6 @@ class ApiService {
     return await this.client.post('/auth/login', credentials)
   }
 
-  async register(userData) {
-    return await this.client.post('/auth/register', userData)
-  }
 
   // Client endpoints
   async getClients() {

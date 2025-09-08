@@ -38,20 +38,6 @@ export const useAuthStore = defineStore('auth', () => {
     apiService.setToken(null)
   }
 
-  const register = async (userData) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      await apiService.register(userData)
-      return true
-    } catch (err) {
-      error.value = err.response?.data?.detail || 'Registration failed'
-      return false
-    } finally {
-      loading.value = false
-    }
-  }
 
   // Initialize token on store creation
   if (token.value) {
@@ -65,7 +51,6 @@ export const useAuthStore = defineStore('auth', () => {
     error,
     isAuthenticated,
     login,
-    logout,
-    register
+    logout
   }
 })
