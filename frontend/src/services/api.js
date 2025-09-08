@@ -64,6 +64,10 @@ class ApiService {
     return await this.client.delete(`/clients/${clientName}`)
   }
 
+  async getClientConfig(clientName) {
+    return await this.client.get(`/clients/${clientName}/config`)
+  }
+
   async getClientQR(clientName) {
     return await this.client.get(`/clients/${clientName}/qr`)
   }

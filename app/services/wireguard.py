@@ -115,6 +115,26 @@ class WireGuardService:
 
         return self.qr_service.generate_qr_code(config_content)
 
+    def get_client_config(self, client_name: str) -> ClientConfig:
+        """Get complete client configuration including config text and QR code"""
+        if not self.wg_manager.client_exists(client_name):
+            raise ValueError("Client not found")
+
+        config_path = Path(self.wg_manager.script_dir) / f"{client_name}.conf"
+        if not config_path.exists():
+            raise ValueError("Client configuration file not found")
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_content = f.read()
+
+        qr_code_data = self.qr_service.generate_qr_code(config_content)
+
+        return ClientConfig(
+            name=client_name,
+            config=config_content,
+            qr_code=qr_code_data
+        )
+
     def _reload_wireguard_config(self, client_info: Dict) -> None:
         """Reload WireGuard configuration after adding client"""
         try:

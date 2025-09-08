@@ -69,6 +69,27 @@ async def delete_client(
         )
 
 
+@router.get("/{client_name}/config", response_model=ClientConfig)
+async def get_client_config(
+    client_name: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get complete client configuration including config text and QR code"""
+    wg_service = WireGuardService()
+    try:
+        return wg_service.get_client_config(client_name)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get client configuration: {str(e)}"
+        )
+
+
 @router.get("/{client_name}/qr", response_model=QRCodeResponse)
 async def get_client_qr(
     client_name: str,
