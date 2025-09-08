@@ -72,12 +72,13 @@ async def delete_client(
 @router.get("/{client_name}/config", response_model=ClientConfig)
 async def get_client_config(
     client_name: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Get complete client configuration including config text and QR code"""
+    """Get complete client configuration including config text, QR code and statistics"""
     wg_service = WireGuardService()
     try:
-        return wg_service.get_client_config(client_name)
+        return wg_service.get_client_config(client_name, db)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

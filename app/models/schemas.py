@@ -61,6 +61,9 @@ class ClientResponse(ClientBase):
     ip_address: str
     created_at: datetime
     is_active: bool
+    last_handshake: Optional[datetime] = None
+    bytes_received: int = 0
+    bytes_sent: int = 0
 
     class Config:
         from_attributes = True
@@ -70,6 +73,9 @@ class ClientConfig(ClientBase):
     """Client configuration schema with QR code"""
     config: str
     qr_code: str
+    last_handshake: Optional[datetime] = None
+    bytes_received: int = 0
+    bytes_sent: int = 0
 
 
 class QRCodeResponse(BaseModel):

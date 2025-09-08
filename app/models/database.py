@@ -2,7 +2,7 @@
 Database models for the application
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, BigInteger
 
 from app.core.database import Base
 
@@ -28,3 +28,6 @@ class Client(Base):
     ip_address = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    last_handshake = Column(DateTime, nullable=True)
+    bytes_received = Column(BigInteger, default=0)
+    bytes_sent = Column(BigInteger, default=0)
