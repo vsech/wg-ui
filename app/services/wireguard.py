@@ -118,7 +118,7 @@ class WireGuardService:
             db.commit()
 
         # Remove configuration file
-        config_path = Path(self.wg_manager.script_dir) / f"{client_name}.conf"
+        config_path = self.wg_manager.client_config_dir / f"{client_name}.conf"
         if config_path.exists():
             config_path.unlink()
 
@@ -127,7 +127,7 @@ class WireGuardService:
         if not self.wg_manager.client_exists(client_name):
             raise ValueError("Client not found")
 
-        config_path = Path(self.wg_manager.script_dir) / f"{client_name}.conf"
+        config_path = self.wg_manager.client_config_dir / f"{client_name}.conf"
         if not config_path.exists():
             raise ValueError("Client configuration file not found")
 
@@ -212,7 +212,7 @@ class WireGuardService:
         if not self.wg_manager.client_exists(client_name):
             raise ValueError("Client not found")
 
-        config_path = Path(self.wg_manager.script_dir) / f"{client_name}.conf"
+        config_path = self.wg_manager.client_config_dir / f"{client_name}.conf"
         if not config_path.exists():
             raise ValueError("Client configuration file not found")
 

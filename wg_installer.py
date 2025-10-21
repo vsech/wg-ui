@@ -24,6 +24,13 @@ class WireGuardBase:
     def __init__(self):
         self.system = SystemConfig()
         self.script_dir = Path(__file__).parent.absolute()
+        self.client_config_dir = Path("/opt/wg-ui/data")
+        try:
+            self.client_config_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self.print_error(
+                "Unable to access /opt/wg-ui/data. Run the installer with sufficient privileges.")
+            sys.exit(1)
         self.wg_config_path = Path("/etc/wireguard/wg0.conf")
 
     def print_banner(self, text: str):
@@ -855,7 +862,7 @@ PersistentKeepalive = 25
 """
 
         # Write client config
-        client_config_path = self.script_dir / f"{client_name}.conf"
+        client_config_path = self.client_config_dir / f"{client_name}.conf"
         with open(client_config_path, 'w', encoding='utf-8') as f:
             f.write(client_config)
 
@@ -949,7 +956,7 @@ PersistentKeepalive = 25
 """
 
         # Write client config
-        client_config_path = self.script_dir / f"{client_name}.conf"
+        client_config_path = self.client_config_dir / f"{client_name}.conf"
         with open(client_config_path, 'w', encoding='utf-8') as f:
             f.write(client_config)
 
