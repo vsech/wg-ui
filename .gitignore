@@ -137,3 +137,5 @@ logs/*.json
 log/
 
 *.db
+
+.DS_Store
