@@ -1,315 +1,182 @@
-# WireGuard Client Manager API
+# WireGuard UI API
 
-FastAPI backend for managing WireGuard VPN clients with JWT authentication and SQLite database.
+FastAPI backend предоставляет API под префиксом `/api`.
 
-## Features
+## Аутентификация
 
-- JWT-based authentication
-- RESTful API for WireGuard client management
-- SQLite database for user and client data
-- QR code generation for client configurations
-- Integration with existing WireGuardClientManager class
+JWT-токен передаётся в заголовке:
 
-## Installation
-
-1. Install Python dependencies:
-
-```bash
-pip install -r requirements.txt
+```text
+Authorization: Bearer <token>
 ```
 
-2. Ensure WireGuard is installed and configured:
+## Эндпоинты
 
-```bash
-# The wg_installer.py script should be run first to set up WireGuard
-sudo python3 wg_installer.py --install
-```
-
-3. Start the API server:
-
-```bash
-python3 main.py
-# or
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-## API Endpoints
-
-### Authentication
-
-#### Register User
+### Login
 
 ```http
-POST /auth/register
+POST /api/auth/login
 Content-Type: application/json
-
-{
-    "username": "admin",
-    "password": "secure_password"
-}
 ```
-
-#### Login
-
-```http
-POST /auth/login
-Content-Type: application/json
-
-{
-    "username": "admin",
-    "password": "secure_password"
-}
-```
-
-Response:
 
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "username": "admin",
+  "password": "secret"
+}
+```
+
+Ответ:
+
+```json
+{
+  "access_token": "<jwt>",
   "token_type": "bearer"
 }
 ```
 
-### Client Management
+### Register
 
-All client endpoints require authentication. Include the JWT token in the Authorization header:
-
-```
-Authorization: Bearer <your_jwt_token>
-```
-
-#### Get All Clients
+Требует уже валидный JWT.
 
 ```http
-GET /clients
+POST /api/auth/register
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "operator",
+  "password": "strong-password"
+}
+```
+
+### List Clients
+
+```http
+GET /api/clients/
 Authorization: Bearer <token>
 ```
 
-Response:
+Пример ответа:
 
 ```json
 [
   {
     "id": 1,
-    "name": "client1",
+    "name": "phone",
     "ip_address": "10.7.0.2",
-    "created_at": "2024-01-01T12:00:00",
-    "is_active": true
+    "created_at": "2026-03-13T07:11:13.563299",
+    "is_active": true,
+    "last_handshake": "2026-03-13T06:58:12.000000",
+    "bytes_received": 271349,
+    "bytes_sent": 587182
   }
 ]
 ```
 
-#### Create New Client
+### Create Client
 
 ```http
-POST /clients
+POST /api/clients/
 Authorization: Bearer <token>
 Content-Type: application/json
-
-{
-    "name": "client2",
-    "dns": "8.8.8.8, 8.8.4.4"
-}
 ```
-
-Response:
 
 ```json
 {
-  "name": "client2",
-  "config": "[Interface]\nAddress = 10.7.0.3/24\nDNS = 8.8.8.8, 8.8.4.4\nPrivateKey = ...\n\n[Peer]\n...",
-  "qr_code": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+  "name": "laptop",
+  "dns": "1.1.1.1, 1.0.0.1"
 }
 ```
 
-#### Delete Client
+Ответ содержит готовый текст конфига и QR:
+
+```json
+{
+  "name": "laptop",
+  "config": "[Interface]\n...",
+  "qr_code": "data:image/png;base64,...",
+  "last_handshake": null,
+  "bytes_received": 0,
+  "bytes_sent": 0
+}
+```
+
+### Delete Client
 
 ```http
-DELETE /clients/{client_name}
+DELETE /api/clients/{client_name}
 Authorization: Bearer <token>
 ```
 
-Response:
+Ответ:
 
 ```json
 {
-  "message": "Client client2 deleted successfully"
+  "message": "Client laptop deleted successfully"
 }
 ```
 
-#### Generate QR Code for Existing Client
+### Get Client Config
 
 ```http
-GET /clients/{client_name}/qr
+GET /api/clients/{client_name}/config
 Authorization: Bearer <token>
 ```
 
-Response:
+Возвращает:
+- текст клиентского `.conf`
+- QR code
+- кешированные runtime-метрики
+
+Важно: endpoint требует наличия файла `/opt/wg-ui/data/{client_name}.conf`. Если этот файл утерян, API вернёт `404`, даже если peer всё ещё существует в `wg0.conf`.
+
+### Get Client QR
+
+```http
+GET /api/clients/{client_name}/qr
+Authorization: Bearer <token>
+```
+
+Важно: как и `/config`, этот endpoint зависит от существующего клиентского `.conf`.
+
+## Формат ошибок
+
+Typed exceptions рендерятся в единый JSON:
 
 ```json
 {
-  "qr_code": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+  "detail": "Client not found",
+  "code": "not_found",
+  "details": {}
 }
 ```
 
-## Usage Examples
+Типовые статусы:
+- `401` для ошибок аутентификации
+- `404` для отсутствующих клиентов или client config files
+- `409` для конфликтов, например при создании клиента с существующим именем
+- `500` для необработанных инфраструктурных сбоев
 
-### Python Client Example
-
-```python
-import requests
-import json
-
-# API base URL
-BASE_URL = "http://localhost:8000"
-
-# Login and get token
-def login(username, password):
-    response = requests.post(f"{BASE_URL}/auth/login", json={
-        "username": username,
-        "password": password
-    })
-    return response.json()["access_token"]
-
-# Create headers with token
-def get_headers(token):
-    return {"Authorization": f"Bearer {token}"}
-
-# Example usage
-token = login("admin", "admin123")
-headers = get_headers(token)
-
-# Get all clients
-clients = requests.get(f"{BASE_URL}/clients", headers=headers).json()
-print("Current clients:", clients)
-
-# Create new client
-new_client = requests.post(f"{BASE_URL}/clients",
-    headers=headers,
-    json={"name": "mobile_device", "dns": "1.1.1.1, 1.0.0.1"}
-).json()
-print("New client config:", new_client["config"])
-
-# Get QR code for client
-qr_response = requests.get(f"{BASE_URL}/clients/mobile_device/qr", headers=headers).json()
-print("QR code data URL:", qr_response["qr_code"][:50] + "...")
-
-# Delete client
-delete_response = requests.delete(f"{BASE_URL}/clients/mobile_device", headers=headers).json()
-print("Delete result:", delete_response["message"])
-```
-
-### cURL Examples
+## cURL примеры
 
 ```bash
-# Login
-TOKEN=$(curl -X POST "http://localhost:8000/auth/login" \
+TOKEN=$(curl -s -X POST "http://127.0.0.1:8000/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin123"}' | jq -r '.access_token')
+  -d '{"username":"admin","password":"secret"}' | jq -r '.access_token')
 
-# Get clients
-curl -X GET "http://localhost:8000/clients" \
+curl -s "http://127.0.0.1:8000/api/clients/" \
   -H "Authorization: Bearer $TOKEN"
 
-# Create client
-curl -X POST "http://localhost:8000/clients" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "laptop", "dns": "8.8.8.8, 8.8.4.4"}'
-
-# Delete client
-curl -X DELETE "http://localhost:8000/clients/laptop" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Get QR code
-curl -X GET "http://localhost:8000/clients/laptop/qr" \
+curl -s "http://127.0.0.1:8000/api/clients/laptop/config" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-## Configuration
+## Operational notes
 
-### Environment Variables
-
-- `SECRET_KEY`: JWT secret key (default: "your-secret-key-change-this-in-production")
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration time in minutes (default: 30)
-- `DATABASE_URL`: SQLite database URL (default: "sqlite:///./wireguard.db")
-
-### Production Setup
-
-1. Set a secure SECRET_KEY:
-
-```bash
-export SECRET_KEY="your-very-secure-secret-key-here"
-```
-
-2. Configure CORS origins in `main.py`:
-
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://yourdomain.com"],  # Replace with your domain
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-3. Use a production WSGI server:
-
-```bash
-pip install gunicorn
-gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
-```
-
-## Database Schema
-
-### Users Table
-
-- `id`: Primary key
-- `username`: Unique username
-- `hashed_password`: Bcrypt hashed password
-- `is_active`: Boolean flag
-- `created_at`: Timestamp
-
-### Clients Table
-
-- `id`: Primary key
-- `name`: Unique client name
-- `public_key`: WireGuard public key
-- `ip_address`: Assigned IP address
-- `created_at`: Timestamp
-- `is_active`: Boolean flag
-
-## Security Considerations
-
-1. **Change the default SECRET_KEY** in production
-2. **Use HTTPS** in production
-3. **Configure CORS** properly for your domain
-4. **Run with appropriate permissions** (the API needs access to WireGuard configuration files)
-5. **Regular token rotation** - tokens expire after 30 minutes by default
-6. **Database backups** - backup the SQLite database regularly
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Permission denied errors**: Ensure the API runs with sufficient privileges to modify WireGuard configurations
-2. **WireGuard not found**: Make sure WireGuard is installed and `wg` command is available
-3. **Database locked**: Ensure only one instance of the API is running
-4. **Token expired**: Re-authenticate to get a new token
-
-### Logs
-
-The API uses FastAPI's built-in logging. For more detailed logs, run with:
-
-```bash
-uvicorn main:app --log-level debug
-```
-
-## API Documentation
-
-Once the server is running, visit:
-
-- Interactive API docs: http://localhost:8000/docs
-- ReDoc documentation: http://localhost:8000/redoc
-- OpenAPI JSON: http://localhost:8000/openapi.json
+- `/api/clients/` синхронизирует кеш в SQLite с реальными peers из WireGuard config
+- runtime-статистика читается через `wg show`
+- source of truth для peers: `/etc/wireguard/wg0.conf`
+- source of truth для downloadable client configs: `/opt/wg-ui/data/*.conf`

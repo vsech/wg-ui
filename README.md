@@ -1,181 +1,130 @@
-# WireGuard VPN Installer - Python Version
+# WireGuard UI
 
-Это Python версия популярного bash скрипта для установки и управления WireGuard VPN сервером. Скрипт предоставляет тот же функционал, что и оригинальная bash версия, но написан на Python для лучшей читаемости и расширяемости.
+Веб-интерфейс для управления WireGuard-клиентами:
+- FastAPI backend с JWT-аутентификацией
+- Vue frontend для списка клиентов, генерации QR и скачивания конфигов
+- SQLite для пользователей и кеша служебных метаданных
+- Alembic для миграций
+- Nginx + systemd + Let's Encrypt для production
 
-## Возможности
+## Что здесь является source of truth
 
-- **Автоматическое определение ОС**: Поддержка Ubuntu, Debian, CentOS, Fedora, AlmaLinux, Rocky Linux
-- **Установка WireGuard**: Автоматическая установка пакетов в зависимости от дистрибутива
-- **Поддержка BoringTun**: Для контейнеров без доступа к kernel модулю WireGuard
-- **Настройка файрвола**: Автоматическая настройка firewalld или iptables
-- **Управление клиентами**: Добавление, удаление клиентов
-- **Генерация QR-кодов**: Для удобного подключения мобильных устройств
-- **Поддержка IPv6**: Опциональная настройка IPv6 туннелей
+- WireGuard peers и runtime-состояние берутся из `/etc/wireguard/wg0.conf` и `wg`
+- клиентские `.conf` хранятся в `/opt/wg-ui/data`
+- SQLite (`wireguard.db`) хранит пользователей и кеш полей `last_handshake`, `bytes_received`, `bytes_sent`
 
-## Требования
+Если файл клиента в `/opt/wg-ui/data/<name>.conf` утерян, endpoint'ы `/api/clients/{name}/config` и `/api/clients/{name}/qr` не смогут восстановить исходный конфиг: приватный ключ клиента в `wg0.conf` не хранится.
 
-- Python 3.6+
-- Root права (sudo)
-- Поддерживаемый Linux дистрибутив
-- Доступ к интернету для загрузки пакетов
+## Основные директории
 
-## Установка
-
-1. Скачайте скрипт:
-
-```bash
-wget https://raw.githubusercontent.com/your-repo/wg_installer.py
+```text
+app/                       FastAPI backend
+frontend/                  Vue frontend
+migrations/                Alembic migrations
+deploy/                    production artifacts: nginx, systemd, env example
+wg_installer.py            legacy CLI/installer для WireGuard
+deploy.sh                  deploy-скрипт для текущего production host
 ```
 
-2. Сделайте скрипт исполняемым:
+## Backend
+
+- entrypoint: `main.py`
+- API prefix: `/api`
+- typed errors и единый JSON error format
+- lifespan startup вместо `@on_event`
+- DI через `app/core/dependencies.py`
+- WireGuard adapter: `app/infrastructure/wireguard/backend.py`
+- client orchestration: `app/services/clients.py`
+
+## Frontend
+
+- Vite + Vue
+- stores: `frontend/src/stores`
+- composables: `frontend/src/composables`
+- axios client: `frontend/src/services/api.js`
+
+Frontend собирается в `frontend/dist` и в production раздаётся nginx из `/var/www/html`.
+
+## Локальный запуск
+
+### 1. Установить зависимости backend
 
 ```bash
-chmod +x wg_installer.py
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-## Использование
-
-### Интерактивный режим (по умолчанию)
+### 2. Установить зависимости frontend
 
 ```bash
-sudo python3 wg_installer.py
+npm --prefix frontend install
 ```
 
-### Принудительная установка
+### 3. Подготовить окружение
+
+Минимум нужен `SECRET_KEY`.
+
+Пример:
 
 ```bash
-sudo python3 wg_installer.py --install
+cat > .env <<'EOF'
+ENVIRONMENT=development
+SECRET_KEY=change-me
+BACKEND_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+EOF
 ```
 
-### Управление существующей установкой
+### 4. Применить миграции
 
 ```bash
-sudo python3 wg_installer.py --manage
+alembic upgrade head
 ```
 
-## Процесс установки
-
-1. **Проверка системы**: Определение ОС, проверка совместимости
-2. **Сетевая настройка**: Выбор IP адресов, порта, настройка NAT
-3. **Установка пакетов**: WireGuard, qrencode, зависимости
-4. **Конфигурация**: Создание серверной и клиентской конфигурации
-5. **Файрвол**: Настройка правил для VPN трафика
-6. **Запуск сервиса**: Активация и запуск WireGuard
-
-## Управление клиентами
-
-### Добавление нового клиента
-
-1. Запустите скрипт в режиме управления
-2. Выберите опцию "Add a new client"
-3. Введите имя клиента
-4. Выберите DNS сервер
-5. Скрипт создаст конфигурационный файл и QR-код
-
-### Удаление клиента
-
-1. Запустите скрипт в режиме управления
-2. Выберите опцию "Remove an existing client"
-3. Выберите клиента из списка
-4. Подтвердите удаление
-
-## DNS серверы
-
-Скрипт поддерживает следующие DNS серверы:
-
-- Системные DNS серверы
-- Google (8.8.8.8, 8.8.4.4)
-- Cloudflare (1.1.1.1, 1.0.0.1)
-- OpenDNS (208.67.222.222, 208.67.220.220)
-- Quad9 (9.9.9.9, 149.112.112.112)
-- AdGuard (94.140.14.14, 94.140.15.15)
-- Пользовательские DNS серверы
-
-## Структура файлов
-
-После установки создаются следующие файлы:
-
-- `/etc/wireguard/wg0.conf` - Конфигурация сервера
-- `~/client.conf` - Конфигурация клиента
-- `/etc/systemd/system/wg-iptables.service` - Сервис iptables (если используется)
-- `/etc/sysctl.d/99-wireguard-forward.conf` - Настройки IP forwarding
-
-## Удаление WireGuard
-
-Для полного удаления:
-
-1. Запустите скрипт в режиме управления
-2. Выберите опцию "Remove WireGuard"
-3. Подтвердите удаление
-
-## Поддержка BoringTun
-
-BoringTun автоматически устанавливается в следующих случаях:
-
-- Система работает в контейнере
-- Kernel модуль WireGuard недоступен
-- Архитектура x86_64
-
-## Безопасность
-
-- Все конфигурационные файлы создаются с правильными правами доступа
-- Приватные ключи генерируются локально
-- Используются preshared keys для дополнительной безопасности
-- Настраивается только необходимый трафик через файрвол
-
-## Устранение неполадок
-
-### Ошибка "Permission denied"
-
-Убедитесь, что скрипт запущен с root правами:
+### 5. Запустить backend и frontend
 
 ```bash
-sudo python3 wg_installer.py
+python start.py
+npm --prefix frontend run dev
 ```
 
-### Ошибка "Command not found"
+Backend по умолчанию слушает `http://127.0.0.1:8000`, frontend dev server проксирует API на backend.
 
-Установите необходимые пакеты:
+## Обязательные переменные окружения
 
-```bash
-# Ubuntu/Debian
-sudo apt-get install python3 python3-pip
+- `SECRET_KEY`: обязателен
+- `ENVIRONMENT`: `development`, `staging`, `production`
+- `BACKEND_CORS_ORIGINS`: список origins через запятую
 
-# CentOS/RHEL
-sudo yum install python3 python3-pip
-```
+## Полезные настройки backend
 
-### Проблемы с сетью
+- `DATABASE_URL`: по умолчанию `sqlite:///./wireguard.db`
+- `WIREGUARD_INTERFACE`: по умолчанию `wg0`
+- `WIREGUARD_CONFIG_PATH`: по умолчанию `/etc/wireguard/wg0.conf`
+- `WIREGUARD_CLIENT_CONFIG_DIR`: по умолчанию `/opt/wg-ui/data`
+- `BOOTSTRAP_ADMIN_ENABLED`: `true/false`
+- `BOOTSTRAP_ADMIN_USERNAME`
+- `BOOTSTRAP_ADMIN_PASSWORD`
 
-Проверьте:
+## Production deploy
 
-- Доступность интернета
-- Настройки файрвола
-- Правильность IP адресов
+В репозитории лежат:
+- `deploy/systemd/wg-ui.service`
+- `deploy/nginx/wg-ui.bootstrap.conf`
+- `deploy/nginx/wg-ui.conf`
+- `deploy/env.production.example`
 
-## Сравнение с bash версией
+`deploy.sh` делает следующее:
+- собирает frontend
+- синхронизирует код на хост
+- не трогает stateful-файлы: `.env`, `wireguard.db`, `*.db`, `data/`
+- восстанавливает `venv`, если он повреждён
+- выполняет `alembic upgrade head`
+- обновляет systemd unit и nginx config
+- перезапускает `wg-ui`
+- выпускает Let's Encrypt сертификат, если его ещё нет
 
-| Функция             | Bash версия               | Python версия            |
-| ------------------- | ------------------------- | ------------------------ |
-| Определение ОС      | grep + условные операторы | platform + чтение файлов |
-| Управление пакетами | apt-get/dnf               | subprocess + apt-get/dnf |
-| Обработка ошибок    | exit codes                | Exception handling       |
-| Читаемость          | Средняя                   | Высокая                  |
-| Расширяемость       | Ограниченная              | Высокая                  |
-| Отладка             | echo + exit               | print + logging          |
+## Документация
 
-## Лицензия
-
-Этот проект основан на оригинальном bash скрипте, выпущенном под MIT License.
-
-## Вклад в проект
-
-Приветствуются pull request'ы и issue reports. Для крупных изменений, пожалуйста, сначала откройте issue для обсуждения.
-
-## Поддержка
-
-Если у вас возникли проблемы:
-
-1. Проверьте раздел "Устранение неполадок"
-2. Создайте issue в репозитории
-3. Приложите логи ошибок и информацию о системе
+- API: `README_API.md`
+- структура проекта: `PROJECT_STRUCTURE.md`

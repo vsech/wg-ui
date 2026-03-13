@@ -1,7 +1,19 @@
 [project]
 name = "wg-ui"
 version = "0.1.0"
-description = "Add your description here"
+description = "WireGuard client manager"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = []
+requires-python = ">=3.11"
+dependencies = [
+    "alembic==1.14.1",
+    "bcrypt<4.0",
+    "fastapi==0.104.1",
+    "passlib[bcrypt]==1.7.4",
+    "pydantic-settings==2.6.1",
+    "python-dotenv==1.0.0",
+    "python-jose[cryptography]==3.3.0",
+    "python-multipart==0.0.6",
+    "qrcode[pil]==7.4.2",
+    "sqlalchemy>=2.0.25",
+    "uvicorn[standard]==0.24.0",
+]
