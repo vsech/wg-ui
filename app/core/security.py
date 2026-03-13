@@ -8,10 +8,17 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from .config import settings
+from .exceptions import ConfigurationError
 
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _get_secret_key() -> str:
+    if settings.secret_key is None:
+        raise ConfigurationError("SECRET_KEY is required for authentication flows")
+    return settings.secret_key.get_secret_value()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -24,7 +31,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(
-        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+        to_encode,
+        _get_secret_key(),
+        algorithm=settings.algorithm,
+    )
     return encoded_jwt
 
 
@@ -41,8 +51,11 @@ def get_password_hash(password: str) -> str:
 def verify_token(token: str) -> Optional[str]:
     """Verify JWT token and return username"""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY,
-                             algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            token,
+            _get_secret_key(),
+            algorithms=[settings.algorithm],
+        )
         username: str = payload.get("sub")
         return username
     except JWTError:
