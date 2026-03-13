@@ -1,56 +1,65 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { apiService } from '@/services/api'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || null)
   const user = ref(null)
-  const loading = ref(false)
+  const loginLoading = ref(false)
   const error = ref(null)
 
   const isAuthenticated = computed(() => !!token.value)
 
+  const applyToken = (nextToken) => {
+    token.value = nextToken
+
+    if (nextToken) {
+      localStorage.setItem('token', nextToken)
+      apiService.setToken(nextToken)
+      return
+    }
+
+    localStorage.removeItem('token')
+    apiService.setToken(null)
+  }
+
   const login = async (credentials) => {
-    loading.value = true
+    loginLoading.value = true
     error.value = null
 
     try {
       const response = await apiService.login(credentials)
-      token.value = response.access_token
-      localStorage.setItem('token', response.access_token)
-
-      // Set token for future API calls
-      apiService.setToken(response.access_token)
-
+      applyToken(response.access_token)
       return true
     } catch (err) {
       error.value = err.response?.data?.detail || 'Login failed'
       return false
     } finally {
-      loading.value = false
+      loginLoading.value = false
     }
   }
 
   const logout = () => {
-    token.value = null
+    applyToken(null)
     user.value = null
-    localStorage.removeItem('token')
-    apiService.setToken(null)
   }
 
-
-  // Initialize token on store creation
   if (token.value) {
     apiService.setToken(token.value)
+  }
+
+  const handleUnauthorized = () => {
+    logout()
   }
 
   return {
     token,
     user,
-    loading,
+    loginLoading,
     error,
     isAuthenticated,
     login,
-    logout
+    logout,
+    handleUnauthorized
   }
 })

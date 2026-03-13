@@ -9,16 +9,16 @@
 
       <div v-if="loading" class="uk-text-center uk-margin-large">
         <div uk-spinner="ratio: 2"></div>
-        <p class="uk-margin-top">Generating QR code...</p>
+        <p class="uk-margin-top">Loading client details...</p>
       </div>
 
-      <div v-else-if="error" class="uk-alert-danger" uk-alert>
-        <p>{{ error }}</p>
-      </div>
-
-      <div v-else-if="displayedQR" class="uk-text-center">
+      <div v-else-if="clientDetails?.qr_code" class="uk-text-center">
         <div class="uk-margin">
-          <img :src="displayedQR" alt="WireGuard QR Code" class="uk-border-rounded qr-code-image" />
+          <img
+            :src="clientDetails.qr_code"
+            alt="WireGuard QR Code"
+            class="uk-border-rounded qr-code-image"
+          />
         </div>
 
         <div class="uk-margin">
@@ -29,16 +29,16 @@
           </p>
         </div>
 
-        <!-- Stats -->
         <div class="uk-margin uk-text-center uk-text-small">
           <div>
             <span class="uk-text-muted">Last handshake:</span>
-            <span>{{ formatDateTime(stats.last_handshake) }}</span>
+            <span>{{ formatDateTime(clientDetails.last_handshake) }}</span>
           </div>
           <div class="uk-margin-small-top">
             <span class="uk-text-muted">Traffic:</span>
             <span>
-              ↓ {{ formatBytes(stats.bytes_received) }} · ↑ {{ formatBytes(stats.bytes_sent) }}
+              ↓ {{ formatBytes(clientDetails.bytes_received) }} · ↑
+              {{ formatBytes(clientDetails.bytes_sent) }}
             </span>
           </div>
         </div>
@@ -54,7 +54,6 @@
           </button>
         </div>
 
-        <!-- Instructions -->
         <div class="uk-margin-top uk-padding uk-background-muted uk-border-rounded">
           <h4 class="uk-text-bold">Setup Instructions:</h4>
           <ol class="uk-text-small">
@@ -67,14 +66,18 @@
           </ol>
         </div>
       </div>
+
+      <div v-else class="uk-alert-warning" uk-alert>
+        <p>Client details are not available.</p>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, watch } from "vue";
-import { useClientsStore } from "@/stores/clients";
 import UIkit from "uikit";
+import { useDownloads } from "@/composables/useDownloads";
+import { useFormatters } from "@/composables/useFormatters";
 
 export default {
   name: "QRCodeModal",
@@ -87,137 +90,40 @@ export default {
       type: String,
       default: "",
     },
-    qrCode: {
-      type: String,
-      default: "",
+    clientDetails: {
+      type: Object,
+      default: () => null,
+    },
+    loading: {
+      type: Boolean,
+      default: false,
     },
   },
   emits: ["update:modelValue"],
   setup(props, { emit }) {
-    const clientsStore = useClientsStore();
-    const loading = ref(false);
-    const error = ref("");
-    const configText = ref("");
-    const displayedQR = ref("");
-    const stats = ref({ last_handshake: null, bytes_received: 0, bytes_sent: 0 });
+    const { downloadDataUrl, downloadTextFile } = useDownloads();
+    const { formatDateTime, formatBytes } = useFormatters();
 
     const closeModal = () => {
       emit("update:modelValue", false);
     };
 
     const downloadQR = () => {
-      if (!displayedQR.value) return;
-
-      // Convert base64 to blob
-      const base64Data = displayedQR.value.replace(/^data:image\/png;base64,/, "");
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: "image/png" });
-
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${props.clientName}-qr.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
+      if (!props.clientDetails?.qr_code) return;
+      downloadDataUrl(props.clientDetails.qr_code, `${props.clientName}-qr.png`, "image/png");
       UIkit.notification("QR code downloaded successfully", "success");
     };
 
-    const downloadConfig = async () => {
-      try {
-        let configContent = "";
-        
-        // Get the config text from the store
-        const client = clientsStore.clients.find((c) => c.name === props.clientName);
-        if (client && client.config) {
-          configContent = client.config;
-        } else {
-          // Fallback: fetch config if not available
-          const response = await clientsStore.getClientConfig(props.clientName);
-          configContent = response.config;
-        }
-
-        // Create blob and download
-        const blob = new Blob([configContent], { type: "text/plain" });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${props.clientName}.conf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-
-        UIkit.notification("Configuration downloaded successfully", "success");
-      } catch (err) {
-        UIkit.notification("Failed to download configuration", "danger");
-      }
+    const downloadConfig = () => {
+      if (!props.clientDetails?.config) return;
+      downloadTextFile(props.clientDetails.config, `${props.clientName}.conf`);
+      UIkit.notification("Configuration downloaded successfully", "success");
     };
-
-    // Helpers
-    const formatDateTime = (dateTimeString) => {
-      if (!dateTimeString) return "Never";
-      try {
-        const dt = new Date(dateTimeString);
-        if (isNaN(dt.getTime())) return "Never";
-        return dt.toLocaleString();
-      } catch {
-        return "Never";
-      }
-    };
-
-    const formatBytes = (bytes) => {
-      if (!bytes || bytes <= 0) return "0 B";
-      const units = ["B", "KB", "MB", "GB", "TB"]; 
-      let i = 0;
-      let val = bytes;
-      while (val >= 1024 && i < units.length - 1) {
-        val /= 1024;
-        i++;
-      }
-      return `${val.toFixed(val < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-    };
-
-    // Load stats and config when modal opens
-    watch(() => props.modelValue, async (open) => {
-      if (!open) return;
-      try {
-        loading.value = true;
-        // Prefer passed QR initially
-        displayedQR.value = props.qrCode || "";
-        const full = await clientsStore.getClientConfig(props.clientName);
-        // Update stats and prefer server QR if provided
-        stats.value.last_handshake = full.last_handshake;
-        stats.value.bytes_received = full.bytes_received;
-        stats.value.bytes_sent = full.bytes_sent;
-        if (full.qr_code) {
-          displayedQR.value = full.qr_code;
-        }
-      } catch (e) {
-        // non-fatal, just notify
-        UIkit.notification("Failed to load client details", "warning");
-      } finally {
-        loading.value = false;
-      }
-    }, { immediate: true });
 
     return {
-      loading,
-      error,
       closeModal,
       downloadQR,
       downloadConfig,
-      displayedQR,
-      stats,
       formatDateTime,
       formatBytes,
     };

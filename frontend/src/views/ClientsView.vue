@@ -12,21 +12,18 @@
         </button>
       </div>
 
-      <!-- Error Alert -->
       <div v-if="clientsStore.error" class="uk-alert-danger uk-margin" uk-alert>
         <a class="uk-alert-close" uk-close></a>
         <p>{{ clientsStore.error }}</p>
       </div>
 
-      <!-- Loading State -->
-      <div v-if="clientsStore.loading && !clients.length" class="uk-text-center uk-margin-large">
+      <div v-if="clientsStore.listLoading && !clients.length" class="uk-text-center uk-margin-large">
         <div uk-spinner="ratio: 2"></div>
         <p class="uk-margin-top">Loading clients...</p>
       </div>
 
-      <!-- Empty State -->
       <div
-        v-else-if="!clients.length && !clientsStore.loading"
+        v-else-if="!clients.length && !clientsStore.listLoading"
         class="uk-text-center uk-margin-large"
       >
         <span uk-icon="icon: users; ratio: 4" class="uk-text-muted"></span>
@@ -38,7 +35,6 @@
         </button>
       </div>
 
-      <!-- Clients Grid -->
       <div v-else class="uk-grid-match uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid>
         <div v-for="client in clients" :key="client.id">
           <div class="uk-card uk-card-default uk-card-hover">
@@ -84,15 +80,22 @@
                 <button
                   class="uk-button uk-button-default uk-width-1-2"
                   @click="showQRCode(client.name)"
+                  :disabled="clientsStore.isDetailsLoading(client.name)"
                 >
-                  <span uk-icon="camera"></span>
-                  QR Code
+                  <span
+                    v-if="clientsStore.isDetailsLoading(client.name)"
+                    uk-spinner="ratio: 0.6"
+                  ></span>
+                  <span v-else uk-icon="camera"></span>
+                  Details
                 </button>
                 <button
                   class="uk-button uk-button-danger uk-width-1-2"
                   @click="confirmDelete(client.name)"
+                  :disabled="clientsStore.isDeleting(client.name)"
                 >
-                  <span uk-icon="trash"></span>
+                  <span v-if="clientsStore.isDeleting(client.name)" uk-spinner="ratio: 0.6"></span>
+                  <span v-else uk-icon="trash"></span>
                   Delete
                 </button>
               </div>
@@ -102,13 +105,15 @@
       </div>
     </div>
 
-    <!-- Create Client Modal -->
     <CreateClientModal v-model="showCreateModal" @client-created="onClientCreated" />
 
-    <!-- QR Code Modal -->
-    <QRCodeModal v-model="showQRModal" :client-name="selectedClient" :qr-code="qrCodeData" />
+    <QRCodeModal
+      v-model="showQRModal"
+      :client-name="selectedClient"
+      :client-details="selectedClientDetails"
+      :loading="selectedClientLoading"
+    />
 
-    <!-- Delete Confirmation Modal -->
     <div
       v-if="showDeleteModal"
       class="uk-flex-top"
@@ -143,11 +148,12 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from "vue";
-import { useClientsStore } from "@/stores/clients";
+import { computed, onMounted, ref } from "vue";
+import UIkit from "uikit";
 import CreateClientModal from "@/components/CreateClientModal.vue";
 import QRCodeModal from "@/components/QRCodeModal.vue";
-import UIkit from "uikit";
+import { useFormatters } from "@/composables/useFormatters";
+import { useClientsStore } from "@/stores/clients";
 
 export default {
   name: "ClientsView",
@@ -157,50 +163,29 @@ export default {
   },
   setup() {
     const clientsStore = useClientsStore();
+    const { formatDate, formatDateTime, formatBytes } = useFormatters();
 
     const showCreateModal = ref(false);
     const showQRModal = ref(false);
     const showDeleteModal = ref(false);
     const selectedClient = ref("");
     const clientToDelete = ref("");
-    const qrCodeData = ref("");
 
     const clients = computed(() => clientsStore.clients);
-
-    const formatDate = (dateString) => {
-      return new Date(dateString).toLocaleDateString();
-    };
-
-    const formatDateTime = (dateTimeString) => {
-      if (!dateTimeString) return "Never";
-      try {
-        const dt = new Date(dateTimeString);
-        if (isNaN(dt.getTime())) return "Never";
-        return dt.toLocaleString();
-      } catch {
-        return "Never";
-      }
-    };
-
-    const formatBytes = (bytes) => {
-      if (!bytes || bytes <= 0) return "0 B";
-      const units = ["B", "KB", "MB", "GB", "TB"]; 
-      let i = 0;
-      let val = bytes;
-      while (val >= 1024 && i < units.length - 1) {
-        val /= 1024;
-        i++;
-      }
-      return `${val.toFixed(val < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-    };
+    const selectedClientDetails = computed(
+      () => clientsStore.clientDetails[selectedClient.value] || null
+    );
+    const selectedClientLoading = computed(
+      () => !!selectedClient.value && clientsStore.isDetailsLoading(selectedClient.value)
+    );
 
     const showQRCode = async (clientName) => {
+      selectedClient.value = clientName;
+      showQRModal.value = true;
       try {
-        selectedClient.value = clientName;
-        qrCodeData.value = await clientsStore.getClientQR(clientName);
-        showQRModal.value = true;
-      } catch (error) {
-        UIkit.notification("Failed to generate QR code", "danger");
+        await clientsStore.fetchClientDetails(clientName);
+      } catch {
+        UIkit.notification("Failed to load client details", "danger");
       }
     };
 
@@ -223,6 +208,7 @@ export default {
     const onClientCreated = (clientData) => {
       UIkit.notification(`Client ${clientData.name} created successfully`, "success");
       showCreateModal.value = false;
+      selectedClient.value = clientData.name;
     };
 
     onMounted(() => {
@@ -237,7 +223,8 @@ export default {
       showDeleteModal,
       selectedClient,
       clientToDelete,
-      qrCodeData,
+      selectedClientDetails,
+      selectedClientLoading,
       formatDate,
       formatDateTime,
       formatBytes,

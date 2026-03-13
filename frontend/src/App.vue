@@ -42,16 +42,19 @@
 <script>
 import { useAuthStore } from "@/stores/auth";
 import { computed } from "vue";
+import { useRouter } from "vue-router";
 
 export default {
   name: "App",
   setup() {
     const authStore = useAuthStore();
+    const router = useRouter();
 
-    const loading = computed(() => authStore.loading);
+    const loading = computed(() => authStore.loginLoading);
 
     const logout = async () => {
-      await authStore.logout();
+      authStore.logout();
+      await router.push("/login");
     };
 
     return {

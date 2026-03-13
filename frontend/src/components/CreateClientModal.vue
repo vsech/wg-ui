@@ -109,8 +109,9 @@
 </template>
 
 <script>
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useClientsStore } from "@/stores/clients";
+import { useDownloads } from "@/composables/useDownloads";
 
 export default {
   name: "CreateClientModal",
@@ -123,15 +124,16 @@ export default {
   emits: ["update:modelValue", "client-created"],
   setup(props, { emit }) {
     const clientsStore = useClientsStore();
+    const { downloadTextFile } = useDownloads();
 
     const form = ref({
       name: "",
       dns: "8.8.8.8, 8.8.4.4",
     });
 
-    const loading = ref(false);
     const error = ref("");
     const createdClient = ref(null);
+    const loading = computed(() => clientsStore.createLoading);
 
     const closeModal = () => {
       emit("update:modelValue", false);
@@ -145,15 +147,12 @@ export default {
       };
       error.value = "";
       createdClient.value = null;
-      loading.value = false;
     };
 
     const handleSubmit = async () => {
-      loading.value = true;
       error.value = "";
 
       try {
-        // Sanitize client name
         const sanitizedName = form.value.name.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 15);
 
         const clientData = {
@@ -166,26 +165,14 @@ export default {
         emit("client-created", response);
       } catch (err) {
         error.value = err.response?.data?.detail || "Failed to create client";
-      } finally {
-        loading.value = false;
       }
     };
 
     const downloadConfig = () => {
       if (!createdClient.value) return;
-
-      const blob = new Blob([createdClient.value.config], { type: "text/plain" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${createdClient.value.name}.conf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadTextFile(createdClient.value.config, `${createdClient.value.name}.conf`);
     };
 
-    // Reset form when modal closes
     watch(
       () => props.modelValue,
       (newValue) => {

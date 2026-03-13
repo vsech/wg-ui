@@ -3,6 +3,7 @@ import axios from 'axios'
 class ApiService {
   constructor() {
     this.baseURL = '/api'
+    this.unauthorizedHandler = null
     this.client = axios.create({
       baseURL: this.baseURL,
       headers: {
@@ -29,12 +30,15 @@ class ApiService {
       (response) => response.data,
       (error) => {
         if (error.response?.status === 401) {
-          localStorage.removeItem('token')
-          window.location.href = '/login'
+          this.unauthorizedHandler?.(error)
         }
         return Promise.reject(error)
       }
     )
+  }
+
+  setUnauthorizedHandler(handler) {
+    this.unauthorizedHandler = handler
   }
 
   setToken(token) {
@@ -68,9 +72,6 @@ class ApiService {
     return await this.client.get(`/clients/${clientName}/config`)
   }
 
-  async getClientQR(clientName) {
-    return await this.client.get(`/clients/${clientName}/qr`)
-  }
 }
 
 export const apiService = new ApiService()

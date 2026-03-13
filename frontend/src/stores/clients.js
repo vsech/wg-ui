@@ -1,14 +1,18 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { apiService } from '@/services/api'
 
 export const useClientsStore = defineStore('clients', () => {
   const clients = ref([])
-  const loading = ref(false)
+  const clientDetails = ref({})
+  const listLoading = ref(false)
+  const createLoading = ref(false)
+  const deleteLoading = reactive({})
+  const detailsLoading = reactive({})
   const error = ref(null)
 
   const fetchClients = async () => {
-    loading.value = true
+    listLoading.value = true
     error.value = null
 
     try {
@@ -17,80 +21,86 @@ export const useClientsStore = defineStore('clients', () => {
     } catch (err) {
       error.value = err.response?.data?.detail || 'Failed to fetch clients'
     } finally {
-      loading.value = false
+      listLoading.value = false
     }
   }
 
   const createClient = async (clientData) => {
-    loading.value = true
+    createLoading.value = true
     error.value = null
 
     try {
       const response = await apiService.createClient(clientData)
-      await fetchClients() // Refresh the list
+      clientDetails.value = {
+        ...clientDetails.value,
+        [response.name]: response,
+      }
+      await fetchClients()
       return response
     } catch (err) {
       error.value = err.response?.data?.detail || 'Failed to create client'
       throw err
     } finally {
-      loading.value = false
+      createLoading.value = false
     }
   }
 
   const deleteClient = async (clientName) => {
-    loading.value = true
+    deleteLoading[clientName] = true
     error.value = null
 
     try {
       await apiService.deleteClient(clientName)
-      await fetchClients() // Refresh the list
+      const nextDetails = { ...clientDetails.value }
+      delete nextDetails[clientName]
+      clientDetails.value = nextDetails
+      await fetchClients()
       return true
     } catch (err) {
       error.value = err.response?.data?.detail || 'Failed to delete client'
       return false
     } finally {
-      loading.value = false
+      deleteLoading[clientName] = false
     }
   }
 
-  const getClientQR = async (clientName) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      const response = await apiService.getClientQR(clientName)
-      return response.qr_code
-    } catch (err) {
-      error.value = err.response?.data?.detail || 'Failed to generate QR code'
-      throw err
-    } finally {
-      loading.value = false
+  const fetchClientDetails = async (clientName, { force = false } = {}) => {
+    if (!force && clientDetails.value[clientName]) {
+      return clientDetails.value[clientName]
     }
-  }
 
-  const getClientConfig = async (clientName) => {
-    loading.value = true
+    detailsLoading[clientName] = true
     error.value = null
 
     try {
       const response = await apiService.getClientConfig(clientName)
+      clientDetails.value = {
+        ...clientDetails.value,
+        [clientName]: response,
+      }
       return response
     } catch (err) {
       error.value = err.response?.data?.detail || 'Failed to load client config'
       throw err
     } finally {
-      loading.value = false
+      detailsLoading[clientName] = false
     }
   }
 
+  const isDeleting = (clientName) => !!deleteLoading[clientName]
+  const isDetailsLoading = (clientName) => !!detailsLoading[clientName]
+
   return {
     clients,
-    loading,
+    clientDetails,
+    listLoading,
+    createLoading,
     error,
     fetchClients,
     createClient,
     deleteClient,
-    getClientQR,
-    getClientConfig
+    fetchClientDetails,
+    isDeleting,
+    isDetailsLoading
   }
 })

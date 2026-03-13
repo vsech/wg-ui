@@ -48,9 +48,9 @@
             <button
               class="uk-button uk-button-primary uk-width-1-1"
               type="submit"
-              :disabled="authStore.loading"
+              :disabled="authStore.loginLoading"
             >
-              <span v-if="authStore.loading" uk-spinner="ratio: 0.8"></span>
+              <span v-if="authStore.loginLoading" uk-spinner="ratio: 0.8"></span>
               <span v-else>Login</span>
             </button>
           </div>
