@@ -48,7 +48,7 @@ wg-ui/
 ├── deploy.sh                      # Deploy script for current production topology
 ├── main.py                        # FastAPI app entrypoint
 ├── start.py                       # Local dev launcher
-├── wg_installer.py                # Legacy CLI installer/manager
+├── wg_installer.py                # CLI installer/manager over shared backend
 ├── README.md
 ├── README_API.md
 └── PROJECT_STRUCTURE.md
@@ -119,6 +119,5 @@ Production deploy опирается на:
 
 ## Historical Notes
 
-- `wg_installer.py` остаётся в репозитории как legacy CLI flow
-- web API больше не зависит от него напрямую
+- web API и `wg_installer.py` теперь используют общий WireGuard backend и единые name rules
 - schema evolution теперь идёт через Alembic, а не через `create_all`

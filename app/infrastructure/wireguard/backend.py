@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from app.core.client_names import validate_client_name
 from app.core.config import settings
 from app.core.exceptions import ConfigurationError, ConflictError, IntegrationError, NotFoundError
+from app.core.exceptions import ValidationError as AppValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +95,11 @@ class WireGuardBackend:
 
     def create_client(self, client_name: str, dns: str) -> CreatedWireGuardClient:
         """Create WireGuard config state for a new client."""
+        try:
+            client_name = validate_client_name(client_name)
+        except ValueError as exc:
+            raise AppValidationError(str(exc)) from exc
+
         if client_name in self._parse_client_entries():
             raise ConflictError("Client with this name already exists")
 

@@ -3,7 +3,9 @@ Pydantic schemas for request/response models
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.client_names import validate_client_name
 
 
 # User schemas
@@ -48,6 +50,11 @@ class TokenData(BaseModel):
 class ClientBase(BaseModel):
     """Base client schema"""
     name: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return validate_client_name(value)
 
 
 class ClientCreate(ClientBase):

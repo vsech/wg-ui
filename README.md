@@ -22,7 +22,7 @@ app/                       FastAPI backend
 frontend/                  Vue frontend
 migrations/                Alembic migrations
 deploy/                    production artifacts: nginx, systemd, env example
-wg_installer.py            legacy CLI/installer для WireGuard
+wg_installer.py            CLI installer/manager поверх общего WireGuard backend
 deploy.sh                  deploy-скрипт для текущего production host
 ```
 
@@ -35,6 +35,7 @@ deploy.sh                  deploy-скрипт для текущего productio
 - DI через `app/core/dependencies.py`
 - WireGuard adapter: `app/infrastructure/wireguard/backend.py`
 - client orchestration: `app/services/clients.py`
+- CLI (`wg_installer.py`) использует тот же WireGuard backend и те же `WIREGUARD_*` settings
 
 ## Frontend
 

@@ -10,13 +10,26 @@ import subprocess
 import platform
 import re
 import shutil
-import urllib.request
 import tempfile
+import urllib.request
 import tarfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 import argparse
+
+from app.core.client_names import (
+    CLIENT_NAME_ALLOWED_DESCRIPTION,
+    CLIENT_NAME_MAX_LENGTH,
+    sanitize_client_name,
+    validate_client_name,
+)
+from app.core.config import settings
+from app.core.exceptions import AppError
+from app.core.database import SessionLocal
+from app.infrastructure.wireguard.backend import WireGuardBackend
+from app.services.clients import ClientService
 from wg_const import Colors, SystemConfig, ServerConfig
+
 
 class WireGuardBase:
     """Base class with common functionality for WireGuard operations"""
@@ -24,14 +37,17 @@ class WireGuardBase:
     def __init__(self):
         self.system = SystemConfig()
         self.script_dir = Path(__file__).parent.absolute()
-        self.client_config_dir = Path("/opt/wg-ui/data")
+        self.interface = settings.wireguard_interface
+        self.client_config_dir = settings.wireguard_client_config_dir
         try:
             self.client_config_dir.mkdir(parents=True, exist_ok=True)
         except PermissionError:
             self.print_error(
-                "Unable to access /opt/wg-ui/data. Run the installer with sufficient privileges.")
+                f"Unable to access {self.client_config_dir}. "
+                "Run the installer with sufficient privileges."
+            )
             sys.exit(1)
-        self.wg_config_path = Path("/etc/wireguard/wg0.conf")
+        self.wg_config_path = settings.wireguard_config_path
 
     def print_banner(self, text: str):
         """Print a formatted banner"""
@@ -54,6 +70,44 @@ class WireGuardBase:
     def print_info(self, text: str):
         """Print info message"""
         print(f"{Colors.BLUE}ℹ {text}{Colors.END}")
+
+    def get_wireguard_backend(self) -> WireGuardBackend:
+        """Build the shared WireGuard backend used by both API and CLI."""
+        return WireGuardBackend()
+
+    def sync_metadata_cache(self) -> None:
+        """Refresh the cached SQLite metadata after CLI mutations."""
+        db = SessionLocal()
+        try:
+            ClientService(db=db, backend=self.get_wireguard_backend()).get_all_clients()
+        except Exception as exc:
+            self.print_warning(f"WireGuard cache sync skipped: {exc}")
+        finally:
+            db.close()
+
+    def prompt_client_name(self, prompt: str, default: Optional[str] = None) -> Optional[str]:
+        """Prompt for a client name using the shared API/CLI validation rules."""
+        while True:
+            try:
+                raw_value = input(prompt).strip()
+            except KeyboardInterrupt:
+                return None
+
+            if not raw_value and default is not None:
+                raw_value = default
+
+            try:
+                return validate_client_name(raw_value)
+            except ValueError as exc:
+                sanitized = sanitize_client_name(raw_value)
+                print(str(exc))
+                if sanitized and sanitized != raw_value:
+                    print(f"Suggested safe name: {sanitized}")
+                print(
+                    "Use only "
+                    f"{CLIENT_NAME_ALLOWED_DESCRIPTION}; "
+                    f"max length {CLIENT_NAME_MAX_LENGTH}."
+                )
 
     def run_command(self, command: List[str],
                     check: bool = True,
@@ -402,8 +456,11 @@ class WireGuardBase:
 
                 # Configure wg-quick to use BoringTun
                 os.makedirs(
-                    '/etc/systemd/system/wg-quick@wg0.service.d/', exist_ok=True)
-                with open('/etc/systemd/system/wg-quick@wg0.service.d/boringtun.conf', 'w') as f:
+                    f'/etc/systemd/system/wg-quick@{self.interface}.service.d/', exist_ok=True)
+                with open(
+                    f'/etc/systemd/system/wg-quick@{self.interface}.service.d/boringtun.conf',
+                    'w'
+                ) as f:
                     f.write("[Service]\n")
                     f.write(
                         "Environment=WG_QUICK_USERSPACE_IMPLEMENTATION=boringtun\n")
@@ -450,12 +507,12 @@ ListenPort = {port}
 """
 
         # Write configuration
-        os.makedirs('/etc/wireguard', exist_ok=True)
-        with open('/etc/wireguard/wg0.conf', 'a', encoding='utf-8') as f:
+        self.wg_config_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.wg_config_path.open('w', encoding='utf-8') as f:
             f.write(config_content)
 
         # Set proper permissions
-        os.chmod('/etc/wireguard/wg0.conf', 0o600)
+        os.chmod(self.wg_config_path, 0o600)
 
     def setup_firewall(self, port: int):
         """Setup firewall rules"""
@@ -556,7 +613,7 @@ WantedBy=multi-user.target
         """Start and enable WireGuard service"""
         try:
             self.run_command(
-                ["systemctl", "enable", "--now", "wg-quick@wg0.service"])
+                ["systemctl", "enable", "--now", f"wg-quick@{self.interface}.service"])
             self.print_success("WireGuard service started")
         except Exception as e:
             self.print_error(f"Failed to start WireGuard service: {e}")
@@ -694,18 +751,12 @@ WantedBy=multi-user.target
                     sys.exit(1)
 
         # Get client name
-        while True:
-            try:
-                client_name = input(
-                    "\nEnter a name for the first client [client]: ").strip()
-                if not client_name:
-                    client_name = "client"
-
-                # Sanitize client name
-                client_name = re.sub(r'[^0-9a-zA-Z_-]', '_', client_name)[:15]
-                break
-            except KeyboardInterrupt:
-                sys.exit(1)
+        client_name = self.prompt_client_name(
+            "\nEnter a name for the first client [client]: ",
+            default="client",
+        )
+        if client_name is None:
+            sys.exit(1)
 
         # Get DNS preference
         dns = self.select_dns()
@@ -734,13 +785,17 @@ WantedBy=multi-user.target
         # Setup firewall
         self.setup_firewall(self.server.port)
 
-        # Create first client
-        client_config_path = self.create_initial_client_config(
-            client_name, dns, self.server.server_ipv6
-        )
-
         # Start service
         self.start_wireguard_service()
+
+        # Create first client using the shared backend flow
+        try:
+            client_config_path = self.create_initial_client_config(
+                client_name, dns, self.server.server_ipv6
+            )
+        except AppError as exc:
+            self.print_error(exc.message)
+            sys.exit(1)
 
         # Generate QR code
         self.generate_qr_code(client_config_path)
@@ -770,18 +825,18 @@ WantedBy=multi-user.target
         try:
             # Stop services
             self.run_command(
-                ["systemctl", "stop", "wg-quick@wg0.service"], check=False)
+                ["systemctl", "stop", f"wg-quick@{self.interface}.service"], check=False)
             self.run_command(
-                ["systemctl", "disable", "wg-quick@wg0.service"], check=False)
+                ["systemctl", "disable", f"wg-quick@{self.interface}.service"], check=False)
 
             # Remove configuration files
-            if os.path.exists('/etc/wireguard'):
-                shutil.rmtree('/etc/wireguard')
+            if self.wg_config_path.parent.exists():
+                shutil.rmtree(self.wg_config_path.parent)
 
             # Remove systemd files
             for file_path in [
                 '/etc/systemd/system/wg-iptables.service',
-                '/etc/systemd/system/wg-quick@wg0.service.d/boringtun.conf'
+                f'/etc/systemd/system/wg-quick@{self.interface}.service.d/boringtun.conf'
             ]:
                 if os.path.exists(file_path):
                     os.remove(file_path)
@@ -813,71 +868,10 @@ class WireGuardInstaller(WireGuardBase):
 
     def create_initial_client_config(self, client_name: str, dns: str, ipv6: Optional[str] = None) -> str:
         """Create initial client configuration during installation"""
-        # Generate client keys
-        client_private_key, client_public_key = self.generate_wireguard_keys()
-        psk = self.run_command(
-            ["wg", "genpsk"], capture_output=True).stdout.strip()
-
-        # Add client to server config
-        server_config = f"""
-# BEGIN_PEER {client_name}
-[Peer]
-PublicKey = {client_public_key}
-PresharedKey = {psk}
-AllowedIPs = 10.7.0.2/32"""
-
-        if ipv6:
-            server_config += ", fddd:2c4:2c4:2c4::2/128"
-
-        server_config += f"""
-# END_PEER {client_name}
-"""
-
-        # Append to server config
-        with open('/etc/wireguard/wg0.conf', 'a', encoding='utf-8') as f:
-            f.write(server_config)
-
-        # Get server public key
-        server_private_key = self.get_server_private_key()
-        server_public_key = self.run_command(
-            ["wg", "pubkey"], input_text=server_private_key, capture_output=True).stdout.strip()
-
-        # Create client config
-        client_config = f"""[Interface]
-Address = 10.7.0.2/24"""
-
-        if ipv6:
-            client_config += "\nAddress = fddd:2c4:2c4:2c4::2/64"
-
-        client_config += f"""
-DNS = {dns}
-PrivateKey = {client_private_key}
-
-[Peer]
-PublicKey = {server_public_key}
-PresharedKey = {psk}
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = {self.server.public_ip or self.server.server_ip}:{self.server.port}
-PersistentKeepalive = 25
-"""
-
-        # Write client config
-        client_config_path = self.client_config_dir / f"{client_name}.conf"
-        with open(client_config_path, 'w', encoding='utf-8') as f:
-            f.write(client_config)
-
-        return str(client_config_path)
-
-    def get_server_private_key(self) -> str:
-        """Get server private key from config"""
-        try:
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('PrivateKey = '):
-                        return line.split(' = ')[1].strip()
-        except Exception:
-            pass
-        return ""
+        del ipv6
+        created = self.get_wireguard_backend().create_client(client_name, dns)
+        self.sync_metadata_cache()
+        return str(created.client.config_path or (self.client_config_dir / f"{client_name}.conf"))
 
 
 class WireGuardClientManager(WireGuardBase):
@@ -887,121 +881,6 @@ class WireGuardClientManager(WireGuardBase):
         super().__init__()
         # Server configuration for client operations
         self.server = ServerConfig()
-
-    def create_client_config(self, client_name: str, dns: str,
-                             ipv6: Optional[str] = None) -> tuple[str, dict]:
-        """Create client configuration file"""
-        # Find next available IP
-        octet = 2
-        while True:
-            if octet >= 255:
-                self.print_error(
-                    "253 clients are already configured. The WireGuard internal subnet is full!")
-                sys.exit(1)
-
-            # Check if IP is already used
-            if not self.is_ip_used(f"10.7.0.{octet}"):
-                break
-            octet += 1
-
-        # Generate client keys
-        client_private_key, client_public_key = self.generate_wireguard_keys()
-        psk = self.run_command(
-            ["wg", "genpsk"], capture_output=True).stdout.strip()
-
-        # Add client to server config
-        server_config = f"""
-# BEGIN_PEER {client_name}
-[Peer]
-PublicKey = {client_public_key}
-PresharedKey = {psk}
-AllowedIPs = 10.7.0.{octet}/32"""
-
-        if ipv6:
-            server_config += f", fddd:2c4:2c4:2c4::{octet}/128"
-
-        server_config += f"""
-# END_PEER {client_name}
-"""
-
-        # Append to server config
-        with open('/etc/wireguard/wg0.conf', 'a', encoding='utf-8') as f:
-            f.write(server_config)
-
-        # Get server info from config
-        endpoint_info = self.get_server_endpoint_info()
-
-        # Create client config
-        client_config = f"""[Interface]
-Address = 10.7.0.{octet}/24"""
-
-        if ipv6:
-            client_config += f"\nAddress = fddd:2c4:2c4:2c4::{octet}/64"
-
-        # Get server public key
-        server_private_key = self.get_server_private_key()
-        server_public_key = self.run_command(
-            ["wg", "pubkey"], input_text=server_private_key, capture_output=True).stdout.strip()
-
-        client_config += f"""
-DNS = {dns}
-PrivateKey = {client_private_key}
-
-[Peer]
-PublicKey = {server_public_key}
-PresharedKey = {psk}
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = {endpoint_info['endpoint']}:{endpoint_info['port']}
-PersistentKeepalive = 25
-"""
-
-        # Write client config
-        client_config_path = self.client_config_dir / f"{client_name}.conf"
-        with open(client_config_path, 'w', encoding='utf-8') as f:
-            f.write(client_config)
-
-        # Return both path and client info for peer configuration
-        client_info = {
-            'public_key': client_public_key,
-            'psk': psk,
-            'octet': octet
-        }
-
-        return str(client_config_path), client_info
-
-    def is_ip_used(self, ip: str) -> bool:
-        """Check if IP address is already used by a client"""
-        try:
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                content = f.read()
-                return f"AllowedIPs = {ip}/" in content
-        except Exception:
-            return False
-
-    def get_server_private_key(self) -> str:
-        """Get server private key from config"""
-        try:
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('PrivateKey = '):
-                        return line.split(' = ')[1].strip()
-        except Exception:
-            pass
-        return ""
-
-    def get_server_endpoint_info(self) -> dict:
-        """Get server endpoint information from config"""
-        endpoint_info = {'endpoint': '127.0.0.1', 'port': '51820'}
-        try:
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('# ENDPOINT '):
-                        endpoint_info['endpoint'] = line.split(' ')[2].strip()
-                    elif line.startswith('ListenPort = '):
-                        endpoint_info['port'] = line.split(' = ')[1].strip()
-        except Exception:
-            pass
-        return endpoint_info
 
     def manage_existing_installation(self):
         """Manage existing WireGuard installation"""
@@ -1041,65 +920,25 @@ PersistentKeepalive = 25
         """Add a new client"""
         print("\nProvide a name for the client:")
 
-        while True:
-            try:
-                client_name = input("Name: ").strip()
-                if not client_name:
-                    continue
-
-                # Sanitize client name
-                client_name = re.sub(r'[^0-9a-zA-Z_-]', '_', client_name)[:15]
-
-                # Check if name already exists
-                if self.client_exists(client_name):
-                    print(f"{client_name}: name already exists.")
-                    continue
-
-                break
-            except KeyboardInterrupt:
-                return
+        client_name = self.prompt_client_name("Name: ")
+        if client_name is None:
+            return
 
         # Get DNS preference
         dns = self.select_dns()
 
-        # Create client
-        client_config_path, client_info = self.create_client_config(
-            client_name, dns, self.server.server_ipv6)
-
-        # Reload WireGuard configuration
         try:
-            # Extract only the peer configuration for the new client
-            peer_config = f"""[Peer]
-PublicKey = {client_info['public_key']}
-PresharedKey = {client_info['psk']}
-AllowedIPs = 10.7.0.{client_info['octet']}/32"""
-            if self.server.server_ipv6:
-                peer_config += f", fddd:2c4:2c4:2c4::{client_info['octet']}/128"
+            created = self.get_wireguard_backend().create_client(client_name, dns)
+        except AppError as exc:
+            self.print_error(exc.message)
+            return
 
-            # Write peer config to temporary file and use wg addconf
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.conf',
-                                             delete=False) as temp_file:
-                temp_file.write(peer_config)
-                temp_file.flush()
-                self.run_command(["wg", "addconf", "wg0", temp_file.name])
-                os.unlink(temp_file.name)
-        except (subprocess.CalledProcessError, OSError, FileNotFoundError):
-            self.run_command(["systemctl", "reload", "wg-quick@wg0.service"])
-
-        # Generate QR code
+        self.sync_metadata_cache()
+        client_config_path = str(
+            created.client.config_path or (self.client_config_dir / f"{client_name}.conf")
+        )
         self.generate_qr_code(client_config_path)
-
-        print(
-            f"\n{client_name} added. Configuration available in: {client_config_path}")
-
-    def client_exists(self, client_name: str) -> bool:
-        """Check if client already exists"""
-        try:
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                content = f.read()
-                return f"# BEGIN_PEER {client_name}" in content
-        except Exception:
-            return False
+        print(f"\n{client_name} added. Configuration available in: {client_config_path}")
 
     def remove_client(self):
         """Remove an existing client"""
@@ -1141,63 +980,23 @@ AllowedIPs = 10.7.0.{client_info['octet']}/32"""
             except KeyboardInterrupt:
                 return
 
-        # Remove client
-        self.remove_client_from_config(client_name)
+        try:
+            self.get_wireguard_backend().delete_client(client_name)
+        except AppError as exc:
+            self.print_error(exc.message)
+            return
 
+        self.sync_metadata_cache()
         print(f"\n{client_name} removed!")
 
     def get_client_list(self) -> List[str]:
         """Get list of existing clients"""
-        clients = []
         try:
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('# BEGIN_PEER '):
-                        client_name = line.split(' ')[-1].strip()
-                        clients.append(client_name)
-        except Exception:
-            pass
-        return clients
-
-    def remove_client_from_config(self, client_name: str):
-        """Remove client from WireGuard configuration"""
-        try:
-            # Read current config
-            with open('/etc/wireguard/wg0.conf', 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-
-            # Find and remove client section
-            new_lines = []
-            skip_section = False
-
-            for line in lines:
-                if f"# BEGIN_PEER {client_name}" in line:
-                    skip_section = True
-                    continue
-                elif f"# END_PEER {client_name}" in line:
-                    skip_section = False
-                    continue
-                elif not skip_section:
-                    new_lines.append(line)
-
-            # Write updated config
-            with open('/etc/wireguard/wg0.conf', 'w', encoding='utf-8') as f:
-                f.writelines(new_lines)
-
-            # Reload configuration
-            self.run_command(["systemctl", "reload", "wg-quick@wg0.service"])
-
-        except FileNotFoundError:
-            self.print_error("WireGuard configuration file not found")
-        except PermissionError:
-            self.print_error(
-                "Permission denied: Cannot modify WireGuard configuration")
-        except (OSError, IOError) as e:
-            self.print_error(f"File operation failed: {e}")
-        except subprocess.CalledProcessError as e:
-            self.print_error(f"Failed to reload WireGuard service: {e}")
-        except Exception as e:
-            self.print_error(f"Unexpected error removing client: {e}")
+            backend = self.get_wireguard_backend()
+            return sorted(client.name for client in backend.list_clients())
+        except AppError as exc:
+            self.print_error(exc.message)
+            return []
 
 
 def main():
