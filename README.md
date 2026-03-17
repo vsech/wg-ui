@@ -133,8 +133,8 @@ Backend по умолчанию слушает `http://127.0.0.1:8000`, frontend
 
 ```bash
 sudo DOMAIN=wg.example.com LETSENCRYPT_EMAIL=admin@example.com ADMIN_USERNAME=admin ./install_wg_ui.sh new
-sudo DOMAIN=wg.example.com ADMIN_USERNAME=admin ./install_wg_ui.sh reinstall
-sudo DOMAIN=wg.example.com ADMIN_USERNAME=admin CLIENT_IMPORT_DIR=/root ./install_wg_ui.sh migrate
+sudo DOMAIN=wg.example.com LETSENCRYPT_EMAIL=admin@example.com ADMIN_USERNAME=admin ./install_wg_ui.sh reinstall
+sudo DOMAIN=wg.example.com LETSENCRYPT_EMAIL=admin@example.com ADMIN_USERNAME=admin CLIENT_IMPORT_DIR=/root ./install_wg_ui.sh migrate
 ```
 
 Полезные переменные:
@@ -148,6 +148,8 @@ sudo DOMAIN=wg.example.com ADMIN_USERNAME=admin CLIENT_IMPORT_DIR=/root ./instal
 - `ENABLE_HTTPS=auto|0|1`: включение HTTPS
 
 По умолчанию `reinstall` не трогает `.env`, `wireguard.db` и `data/` без `RESET_APP_STATE=1`: они сначала бэкапятся, затем используются повторно.
+
+Важно: при `ENABLE_HTTPS=auto` сертификат выпускается только если задан и `DOMAIN`, и `LETSENCRYPT_EMAIL`. Если email не передан, скрипт остаётся на HTTP и выводит warning.
 
 ## Пошаговая установка на чистый сервер
 

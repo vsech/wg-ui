@@ -92,8 +92,8 @@ Useful environment variables:
 
 Examples:
   sudo DOMAIN=wg.example.com LETSENCRYPT_EMAIL=admin@example.com ADMIN_USERNAME=admin ./${SCRIPT_NAME} new
-  sudo DOMAIN=wg.example.com ADMIN_USERNAME=admin ./${SCRIPT_NAME} reinstall
-  sudo DOMAIN=wg.example.com ADMIN_USERNAME=admin CLIENT_IMPORT_DIR=/root ./${SCRIPT_NAME} migrate
+  sudo DOMAIN=wg.example.com LETSENCRYPT_EMAIL=admin@example.com ADMIN_USERNAME=admin ./${SCRIPT_NAME} reinstall
+  sudo DOMAIN=wg.example.com LETSENCRYPT_EMAIL=admin@example.com ADMIN_USERNAME=admin CLIENT_IMPORT_DIR=/root ./${SCRIPT_NAME} migrate
 EOF
 }
 
@@ -303,6 +303,12 @@ ensure_secret_key() {
 }
 
 resolve_https_flag() {
+  local existing_cert_dir=""
+
+  if [[ -n "${DOMAIN}" ]]; then
+    existing_cert_dir="/etc/letsencrypt/live/${DOMAIN}"
+  fi
+
   case "${ENABLE_HTTPS}" in
     1|true|TRUE|yes|YES|on|ON)
       [[ -n "${DOMAIN}" ]] || fail "DOMAIN is required when ENABLE_HTTPS=1"
@@ -315,7 +321,13 @@ resolve_https_flag() {
     auto)
       if [[ -n "${DOMAIN}" && -n "${LETSENCRYPT_EMAIL}" ]]; then
         ENABLE_HTTPS="1"
+      elif [[ -n "${existing_cert_dir}" && -d "${existing_cert_dir}" ]]; then
+        info "Existing Let's Encrypt certificate found for ${DOMAIN}, HTTPS will remain enabled"
+        ENABLE_HTTPS="1"
       else
+        if [[ -n "${DOMAIN}" ]]; then
+          warn "DOMAIN is set but LETSENCRYPT_EMAIL is empty, so ENABLE_HTTPS=auto falls back to HTTP. Set LETSENCRYPT_EMAIL or ENABLE_HTTPS=1 to issue a certificate."
+        fi
         ENABLE_HTTPS="0"
       fi
       ;;
