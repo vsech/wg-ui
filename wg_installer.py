@@ -13,9 +13,12 @@ import shutil
 import tempfile
 import urllib.request
 import tarfile
+from getpass import getpass
 from pathlib import Path
 from typing import Optional, List, Tuple
 import argparse
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.client_names import (
     CLIENT_NAME_ALLOWED_DESCRIPTION,
@@ -27,6 +30,8 @@ from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.database import SessionLocal
 from app.infrastructure.wireguard.backend import WireGuardBackend
+from app.models.schemas import UserCreate
+from app.services.auth import AuthService
 from app.services.clients import ClientService
 from wg_const import Colors, SystemConfig, ServerConfig
 
@@ -39,14 +44,6 @@ class WireGuardBase:
         self.script_dir = Path(__file__).parent.absolute()
         self.interface = settings.wireguard_interface
         self.client_config_dir = settings.wireguard_client_config_dir
-        try:
-            self.client_config_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError:
-            self.print_error(
-                f"Unable to access {self.client_config_dir}. "
-                "Run the installer with sufficient privileges."
-            )
-            sys.exit(1)
         self.wg_config_path = settings.wireguard_config_path
 
     def print_banner(self, text: str):
@@ -75,15 +72,50 @@ class WireGuardBase:
         """Build the shared WireGuard backend used by both API and CLI."""
         return WireGuardBackend()
 
-    def sync_metadata_cache(self) -> None:
+    def ensure_client_config_dir(self) -> None:
+        """Ensure the client config directory is accessible."""
+        try:
+            self.client_config_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            self.print_error(
+                f"Unable to access {self.client_config_dir}. "
+                "Run the installer with sufficient privileges."
+            )
+            sys.exit(1)
+
+    def sync_metadata_cache(self, *, raise_on_error: bool = False) -> Optional[int]:
         """Refresh the cached SQLite metadata after CLI mutations."""
         db = SessionLocal()
         try:
-            ClientService(db=db, backend=self.get_wireguard_backend()).get_all_clients()
+            clients = ClientService(db=db, backend=self.get_wireguard_backend()).get_all_clients()
+            return len(clients)
         except Exception as exc:
+            if raise_on_error:
+                raise
             self.print_warning(f"WireGuard cache sync skipped: {exc}")
         finally:
             db.close()
+        return None
+
+    def prompt_password(self, prompt: str, confirm_prompt: str) -> Optional[str]:
+        """Prompt for a password twice and ensure it matches."""
+        if not sys.stdin.isatty():
+            self.print_error("Admin password is required. Pass --admin-password or run in a TTY.")
+            return None
+
+        while True:
+            first = getpass(prompt)
+            second = getpass(confirm_prompt)
+
+            if not first:
+                self.print_error("Password can not be empty.")
+                continue
+
+            if first != second:
+                self.print_error("Passwords do not match.")
+                continue
+
+            return first
 
     def prompt_client_name(self, prompt: str, default: Optional[str] = None) -> Optional[str]:
         """Prompt for a client name using the shared API/CLI validation rules."""
@@ -337,17 +369,19 @@ class WireGuardBase:
             except KeyboardInterrupt:
                 sys.exit(1)
 
-        dns_servers = {
-            "1": self.get_system_dns(),
-            "2": "8.8.8.8, 8.8.4.4",
-            "3": "1.1.1.1, 1.0.0.1",
-            "4": "208.67.222.222, 208.67.220.220",
-            "5": "9.9.9.9, 149.112.112.112",
-            "6": "94.140.14.14, 94.140.15.15",
-            "7": self.get_custom_dns()
-        }
-
-        return dns_servers[choice]
+        if choice == "1":
+            return self.get_system_dns()
+        if choice == "2":
+            return "8.8.8.8, 8.8.4.4"
+        if choice == "3":
+            return "1.1.1.1, 1.0.0.1"
+        if choice == "4":
+            return "208.67.222.222, 208.67.220.220"
+        if choice == "5":
+            return "9.9.9.9, 149.112.112.112"
+        if choice == "6":
+            return "94.140.14.14, 94.140.15.15"
+        return self.get_custom_dns()
 
     def get_system_dns(self) -> str:
         """Get system DNS servers"""
@@ -999,6 +1033,149 @@ class WireGuardClientManager(WireGuardBase):
             return []
 
 
+class WireGuardBackendBootstrapper(WireGuardBase):
+    """Bootstrap the web backend for an existing WireGuard installation."""
+
+    def bootstrap_backend(
+        self,
+        *,
+        source_dir: Path,
+        overwrite_configs: bool,
+        admin_username: Optional[str],
+        admin_password: Optional[str],
+    ) -> None:
+        """Run the full bootstrap flow for an existing WireGuard setup."""
+        self.check_root()
+        self.print_banner("WireGuard Backend Bootstrap")
+
+        imported_config_count = self.import_client_configs(
+            source_dir=source_dir,
+            overwrite=overwrite_configs,
+        )
+        client_count = self.import_clients_to_db()
+
+        if admin_username:
+            self.create_admin_user(admin_username, admin_password)
+        else:
+            self.print_info("Admin creation skipped. Use --create-admin to create an interface user.")
+
+        self.print_success(
+            f"Bootstrap complete: {client_count} clients synced, "
+            f"{imported_config_count} config files imported."
+        )
+
+    def import_clients_to_db(self) -> int:
+        """Sync existing peers from the WireGuard config into the database."""
+        try:
+            client_count = self.sync_metadata_cache(raise_on_error=True)
+        except AppError as exc:
+            self.print_error(exc.message)
+            sys.exit(1)
+        except SQLAlchemyError as exc:
+            self.print_error(f"Database sync failed: {exc}")
+            self.print_info("Apply migrations first: alembic upgrade head")
+            sys.exit(1)
+        except Exception as exc:
+            self.print_error(f"Database sync failed: {exc}")
+            sys.exit(1)
+
+        synced = client_count or 0
+        self.print_success(f"Imported {synced} WireGuard clients into the database cache")
+        return synced
+
+    def create_admin_user(self, username: str, password: Optional[str]) -> bool:
+        """Create an admin user directly from the CLI."""
+        password = password or self.prompt_password(
+            f"Password for {username}: ",
+            "Confirm password: ",
+        )
+        if password is None:
+            sys.exit(1)
+
+        db = SessionLocal()
+        try:
+            auth_service = AuthService(db)
+            existing_user = auth_service.get_user_by_username(username)
+            if existing_user:
+                self.print_warning(f"Admin user '{username}' already exists")
+                return False
+
+            auth_service.create_user(UserCreate(username=username, password=password))
+        except SQLAlchemyError as exc:
+            db.rollback()
+            self.print_error(f"Failed to create admin user: {exc}")
+            self.print_info("Apply migrations first: alembic upgrade head")
+            sys.exit(1)
+        except Exception as exc:
+            db.rollback()
+            self.print_error(f"Failed to create admin user: {exc}")
+            sys.exit(1)
+        finally:
+            db.close()
+
+        self.print_success(f"Admin user '{username}' created")
+        return True
+
+    def import_client_configs(self, *, source_dir: Path, overwrite: bool) -> int:
+        """Copy existing client configs into the app config directory."""
+        self.ensure_client_config_dir()
+
+        if not source_dir.exists() or not source_dir.is_dir():
+            self.print_error(f"Source directory not found: {source_dir}")
+            sys.exit(1)
+
+        try:
+            client_names = {
+                client.name for client in self.get_wireguard_backend().list_clients()
+            }
+        except AppError as exc:
+            self.print_error(exc.message)
+            sys.exit(1)
+
+        if not client_names:
+            self.print_warning("No clients found in the WireGuard config")
+            return 0
+
+        imported = 0
+        skipped_existing: list[str] = []
+        missing: list[str] = []
+
+        for client_name in sorted(client_names):
+            source_path = source_dir / f"{client_name}.conf"
+            target_path = self.client_config_dir / f"{client_name}.conf"
+
+            if not source_path.exists():
+                missing.append(client_name)
+                continue
+
+            if source_path.resolve() == target_path.resolve():
+                continue
+
+            if target_path.exists() and not overwrite:
+                skipped_existing.append(client_name)
+                continue
+
+            shutil.copy2(source_path, target_path)
+            os.chmod(target_path, 0o600)
+            imported += 1
+
+        if skipped_existing:
+            self.print_warning(
+                "Skipped existing client configs: "
+                + ", ".join(skipped_existing)
+            )
+        if missing:
+            self.print_warning(
+                "Client config files were not found in the source directory: "
+                + ", ".join(missing)
+            )
+
+        self.print_success(
+            f"Imported {imported} client config files into {self.client_config_dir}"
+        )
+        return imported
+
+
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(description="WireGuard VPN Installer")
@@ -1006,6 +1183,35 @@ def main():
                         help="Install WireGuard")
     parser.add_argument("--manage", action="store_true",
                         help="Manage existing installation")
+    parser.add_argument(
+        "--bootstrap-backend",
+        action="store_true",
+        help="Bootstrap the web backend for an existing WireGuard installation",
+    )
+    parser.add_argument(
+        "--import-existing-clients",
+        action="store_true",
+        help="Sync existing WireGuard peers from wg0.conf into the database",
+    )
+    parser.add_argument(
+        "--import-client-configs-from",
+        metavar="DIR",
+        help="Copy existing client .conf files from DIR into the application data directory",
+    )
+    parser.add_argument(
+        "--overwrite-client-configs",
+        action="store_true",
+        help="Overwrite client config files that already exist in the application data directory",
+    )
+    parser.add_argument(
+        "--create-admin",
+        metavar="USERNAME",
+        help="Create an admin user for the web interface",
+    )
+    parser.add_argument(
+        "--admin-password",
+        help="Password for --create-admin. If omitted, the CLI prompts for it.",
+    )
 
     args = parser.parse_args()
 
@@ -1015,6 +1221,36 @@ def main():
     elif args.manage:
         client_manager = WireGuardClientManager()
         client_manager.manage_existing_installation()
+    elif (
+        args.bootstrap_backend
+        or args.import_existing_clients
+        or args.import_client_configs_from
+        or args.create_admin
+    ):
+        bootstrapper = WireGuardBackendBootstrapper()
+
+        if args.bootstrap_backend:
+            source_dir = Path(args.import_client_configs_from or "/root")
+            bootstrapper.bootstrap_backend(
+                source_dir=source_dir,
+                overwrite_configs=args.overwrite_client_configs,
+                admin_username=args.create_admin,
+                admin_password=args.admin_password,
+            )
+            return
+
+        if args.import_client_configs_from:
+            bootstrapper.check_root()
+            bootstrapper.import_client_configs(
+                source_dir=Path(args.import_client_configs_from),
+                overwrite=args.overwrite_client_configs,
+            )
+
+        if args.import_existing_clients:
+            bootstrapper.import_clients_to_db()
+
+        if args.create_admin:
+            bootstrapper.create_admin_user(args.create_admin, args.admin_password)
     else:
         # Interactive mode
         installer = WireGuardInstaller()
